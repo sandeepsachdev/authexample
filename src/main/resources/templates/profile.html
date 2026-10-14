@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments/layout :: head('Profile')}"></head>
+<body>
+<header th:replace="~{fragments/layout :: nav}"></header>
+<main>
+    <section class="card">
+        <img th:if="${picture}" th:src="${picture}" class="avatar" alt="avatar">
+        <h1 th:text="${name}">Name</h1>
+        <p th:if="${email}" th:text="${email}">email@example.com</p>
+    </section>
+
+    <section class="card">
+        <h2>ID token claims</h2>
+        <table>
+            <tr th:each="claim : ${claims}">
+                <th th:text="${claim.key}">claim</th>
+                <td><code th:text="${claim.value}">value</code></td>
+            </tr>
+        </table>
+    </section>
+</main>
+</body>
+</html>

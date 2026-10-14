@@ -1,0 +1,29 @@
+server:
+  # Railway injects PORT; fall back to 8080 locally.
+  port: ${PORT:8080}
+  # Railway terminates TLS at its proxy. Trust X-Forwarded-* headers so that
+  # generated redirect URIs use https://<your-app>.up.railway.app.
+  forward-headers-strategy: framework
+
+spring:
+  application:
+    name: authexample
+  security:
+    oauth2:
+      client:
+        registration:
+          auth0:
+            client-id: ${AUTH0_CLIENT_ID}
+            client-secret: ${AUTH0_CLIENT_SECRET}
+            scope: openid, profile, email
+        provider:
+          auth0:
+            # e.g. AUTH0_DOMAIN=dev-abc123.us.auth0.com
+            # The trailing slash matters: it must match the "iss" claim in Auth0 tokens.
+            issuer-uri: https://${AUTH0_DOMAIN}/
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health

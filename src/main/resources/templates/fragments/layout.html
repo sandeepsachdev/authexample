@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" xmlns:sec="http://www.thymeleaf.org/extras/spring-security">
+<head th:fragment="head(title)">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title th:text="${title} + ' · Auth0 + Spring Boot'">Auth0 + Spring Boot</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+<body>
+<header th:fragment="nav" class="nav">
+    <a class="brand" th:href="@{/}">🔐 Auth0 + Spring Boot</a>
+    <nav>
+        <a th:href="@{/}">Home</a>
+        <a th:href="@{/profile}">Profile</a>
+        <a sec:authorize="!isAuthenticated()" class="button" th:href="@{/oauth2/authorization/auth0}">Log in</a>
+        <form sec:authorize="isAuthenticated()" th:action="@{/logout}" method="post">
+            <button class="button" type="submit">Log out</button>
+        </form>
+    </nav>
+</header>
+</body>
+</html>

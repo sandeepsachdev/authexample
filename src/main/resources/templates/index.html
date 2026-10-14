@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" xmlns:sec="http://www.thymeleaf.org/extras/spring-security">
+<head th:replace="~{fragments/layout :: head('Home')}"></head>
+<body>
+<header th:replace="~{fragments/layout :: nav}"></header>
+<main>
+    <section sec:authorize="!isAuthenticated()" class="card">
+        <h1>Welcome 👋</h1>
+        <p>This demo shows a Spring Boot web app delegating sign-in to <strong>Auth0</strong>
+            using OpenID Connect via Spring Security.</p>
+        <p>You are currently <strong>not signed in</strong>. The
+            <a th:href="@{/profile}">Profile</a> page is protected — try opening it and you'll be
+            sent to Auth0 to log in.</p>
+        <a class="button big" th:href="@{/oauth2/authorization/auth0}">Log in with Auth0</a>
+    </section>
+
+    <section sec:authorize="isAuthenticated()" class="card">
+        <img th:if="${picture}" th:src="${picture}" class="avatar" alt="avatar">
+        <h1>Hello, <span th:text="${name}">user</span>!</h1>
+        <p>You are signed in via Auth0. View your <a th:href="@{/profile}">profile</a> to see the
+            claims from your ID token.</p>
+    </section>
+
+    <section class="card muted">
+        <h2>How it works</h2>
+        <ol>
+            <li>You click <em>Log in</em> → Spring Security redirects to Auth0's Universal Login.</li>
+            <li>Auth0 authenticates you and redirects back to
+                <code>/login/oauth2/code/auth0</code> with an authorization code.</li>
+            <li>Spring Security exchanges the code for tokens, validates the ID token and creates a session.</li>
+            <li><em>Log out</em> clears the session and calls Auth0's <code>/v2/logout</code>.</li>
+        </ol>
+    </section>
+</main>
+</body>
+</html>
