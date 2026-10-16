@@ -28,6 +28,8 @@
             <li>Auth0 authenticates you and redirects back to
                 <code>/login/oauth2/code/auth0</code> with an authorization code.</li>
             <li>Spring Security exchanges the code for tokens, validates the ID token and creates a session.</li>
+            <li>A Post-Login Action in Auth0 adds the user's roles to the ID token; the app maps
+                them to Spring Security roles that guard <code>/members</code> and <code>/admin</code>.</li>
             <li><em>Log out</em> clears the session and calls Auth0's <code>/v2/logout</code>.</li>
         </ol>
     </section>

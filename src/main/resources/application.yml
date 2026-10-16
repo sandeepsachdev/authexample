@@ -27,3 +27,9 @@ management:
     web:
       exposure:
         include: health
+
+app:
+  auth0:
+    # Custom ID-token claim that the Auth0 Post-Login Action fills with the user's roles.
+    # Must match the namespace in auth0/add-roles-to-tokens.js.
+    roles-claim: ${AUTH0_ROLES_CLAIM:https://authexample.demo/roles}

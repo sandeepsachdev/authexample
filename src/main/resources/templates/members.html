@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments/layout :: head('Members')}"></head>
+<body>
+<header th:replace="~{fragments/layout :: nav}"></header>
+<main>
+    <section class="card">
+        <span class="badge">MEMBER</span>
+        <h1>Members area</h1>
+        <p>Welcome, <strong th:text="${name}">user</strong>. Only users with the
+            <code>member</code> or <code>admin</code> role in Auth0 can see this page.</p>
+        <p>Guarded in <code>SecurityConfig</code> by
+            <code>.requestMatchers("/members/**").hasRole("MEMBER")</code>.</p>
+    </section>
+</main>
+</body>
+</html>

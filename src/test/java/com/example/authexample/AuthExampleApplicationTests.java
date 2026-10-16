@@ -6,6 +6,7 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.forwardedUrl;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.redirectedUrl;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -15,6 +16,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.oauth2.client.registration.InMemoryClientRegistrationRepository;
@@ -89,5 +91,49 @@ class AuthExampleApplicationTests {
             .andExpect(status().is3xxRedirection())
             .andExpect(redirectedUrl(
                 "https://example.auth0.com/v2/logout?client_id=test-client&returnTo=http://localhost/"));
+    }
+
+    @Test
+    void membersAndAdminRedirectAnonymousUsersToLogin() throws Exception {
+        mvc.perform(get("/members")).andExpect(status().is3xxRedirection());
+        mvc.perform(get("/admin")).andExpect(status().is3xxRedirection());
+    }
+
+    @Test
+    void userWithoutRolesIsDeniedMembersAndAdmin() throws Exception {
+        mvc.perform(get("/members").with(oidcLogin()))
+            .andExpect(status().isForbidden())
+            .andExpect(forwardedUrl("/access-denied"));
+        mvc.perform(get("/admin").with(oidcLogin()))
+            .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void memberCanOpenMembersButNotAdmin() throws Exception {
+        var member = oidcLogin().authorities(new SimpleGrantedAuthority("ROLE_MEMBER"));
+        mvc.perform(get("/members").with(member))
+            .andExpect(status().isOk())
+            .andExpect(content().string(containsString("Members area")));
+        mvc.perform(get("/admin").with(member))
+            .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void adminCanOpenAdminAndMembersThroughRoleHierarchy() throws Exception {
+        var admin = oidcLogin().authorities(new SimpleGrantedAuthority("ROLE_ADMIN"));
+        mvc.perform(get("/admin").with(admin))
+            .andExpect(status().isOk())
+            .andExpect(content().string(containsString("Admin area")));
+        mvc.perform(get("/members").with(admin))
+            .andExpect(status().isOk());
+    }
+
+    @Test
+    void profileListsRolesAndAccess() throws Exception {
+        mvc.perform(get("/profile").with(oidcLogin().authorities(new SimpleGrantedAuthority("ROLE_ADMIN"))))
+            .andExpect(status().isOk())
+            .andExpect(content().string(containsString(">ADMIN<")))
+            // Hierarchy applies in templates too: an admin sees the Members area as open.
+            .andExpect(content().string(org.hamcrest.Matchers.not(containsString("needs the <code>member</code>"))));
     }
 }

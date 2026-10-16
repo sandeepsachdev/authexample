@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html xmlns:th="http://www.thymeleaf.org">
+<html xmlns:th="http://www.thymeleaf.org" xmlns:sec="http://www.thymeleaf.org/extras/spring-security">
 <head th:replace="~{fragments/layout :: head('Profile')}"></head>
 <body>
 <header th:replace="~{fragments/layout :: nav}"></header>
@@ -8,6 +8,23 @@
         <img th:if="${picture}" th:src="${picture}" class="avatar" alt="avatar">
         <h1 th:text="${name}">Name</h1>
         <p th:if="${email}" th:text="${email}">email@example.com</p>
+        <p>
+            Roles:
+            <span th:each="role : ${roles}" class="badge" th:text="${role}">ADMIN</span>
+            <em th:if="${#lists.isEmpty(roles)}">none — assign roles to this user in Auth0
+                (see the README), then log out and back in.</em>
+        </p>
+    </section>
+
+    <section class="card">
+        <h2>Your access</h2>
+        <table>
+            <tr><th>Profile</th><td>✅ any signed-in user</td></tr>
+            <tr><th>Members</th><td sec:authorize="hasRole('MEMBER')">✅ <a th:href="@{/members}">open</a></td>
+                <td sec:authorize="!hasRole('MEMBER')">🚫 needs the <code>member</code> or <code>admin</code> role</td></tr>
+            <tr><th>Admin</th><td sec:authorize="hasRole('ADMIN')">✅ <a th:href="@{/admin}">open</a></td>
+                <td sec:authorize="!hasRole('ADMIN')">🚫 needs the <code>admin</code> role</td></tr>
+        </table>
     </section>
 
     <section class="card">

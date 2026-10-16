@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments/layout :: head('Admin')}"></head>
+<body>
+<header th:replace="~{fragments/layout :: nav}"></header>
+<main>
+    <section class="card">
+        <span class="badge admin">ADMIN</span>
+        <h1>Admin area</h1>
+        <p>Welcome, <strong th:text="${name}">user</strong>. Only users with the
+            <code>admin</code> role in Auth0 can see this page.</p>
+        <p>Guarded in <code>SecurityConfig</code> by
+            <code>.requestMatchers("/admin/**").hasRole("ADMIN")</code>. Admins can also open the
+            Members area because of the role hierarchy <code>ADMIN &gt; MEMBER</code>.</p>
+    </section>
+</main>
+</body>
+</html>
