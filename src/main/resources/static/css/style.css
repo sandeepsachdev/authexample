@@ -41,3 +41,14 @@ main.wide { max-width: 1000px; }
 .flash.ok { background: #dcfce7; color: #14532d; }
 .flash.error { background: #fee2e2; color: #7f1d1d; }
 pre { white-space: pre-wrap; word-break: break-all; background: var(--bg); padding: .75rem; border-radius: 8px; }
+.title-row { display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; }
+.title-row h1 { margin-bottom: 0; }
+form.stacked { display: grid; gap: 1rem; }
+form.stacked > label { display: grid; gap: .3rem; font-weight: 600; }
+form.stacked > label span { font-weight: 400; }
+form.stacked input[type=email], form.stacked input[type=text], form.stacked input[type=password], .copy-field {
+    font: inherit; padding: .55rem .7rem; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--bg); color: var(--text); width: 100%; }
+fieldset { border: 1px solid var(--border); border-radius: 8px; padding: .5rem 1rem; }
+legend { font-weight: 600; padding: 0 .3rem; }
+form.stacked button { justify-self: start; }

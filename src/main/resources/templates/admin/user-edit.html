@@ -7,6 +7,12 @@
     <p><a th:href="@{/admin/users}">← All users</a></p>
     <div th:if="${message}" class="flash ok" th:text="${message}">Saved</div>
     <div th:if="${error}" class="flash error" th:text="${error}">Error</div>
+    <section th:if="${setupLink}" class="card">
+        <h2>Send this link to the user</h2>
+        <p>It lets them choose their own password and is valid for 7 days. It is shown
+            <strong>only once</strong>, so copy it now.</p>
+        <input class="copy-field" type="text" readonly th:value="${setupLink}" onclick="this.select()">
+    </section>
 
     <section class="card">
         <img th:if="${user.picture}" th:src="${user.picture}" class="avatar" alt="avatar">

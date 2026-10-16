@@ -1,9 +1,11 @@
 package com.example.authexample.admin;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -126,6 +128,49 @@ public class Auth0ManagementClient {
             .body(Map.of("roles", roleIds))
             .retrieve()
             .toBodilessEntity();
+    }
+
+    /**
+     * Creates a user in a database connection (email + password login). Needs scope create:users.
+     * Auth0 rejects passwords that don't meet the connection's password policy with HTTP 400,
+     * and emails that already exist with HTTP 409.
+     */
+    public Auth0Models.User createUser(String connection, String email, String name, String password) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("connection", connection);
+        body.put("email", email);
+        body.put("password", password);
+        if (name != null && !name.isBlank()) {
+            body.put("name", name.trim());
+        }
+        return rest.post()
+            .uri("/api/v2/users")
+            .headers(h -> h.setBearerAuth(token()))
+            .contentType(MediaType.APPLICATION_JSON)
+            .body(body)
+            .retrieve()
+            .body(Auth0Models.User.class);
+    }
+
+    /**
+     * Creates a one-time link that lets the user choose their own password (an Auth0
+     * "password change ticket"). After setting it they are sent to {@code resultUrl}.
+     * Opening the link also proves they own the email, so it is marked verified.
+     * Needs scope create:user_tickets.
+     */
+    public String createPasswordSetupLink(String userId, String resultUrl, Duration validFor) {
+        Auth0Models.Ticket ticket = rest.post()
+            .uri("/api/v2/tickets/password-change")
+            .headers(h -> h.setBearerAuth(token()))
+            .contentType(MediaType.APPLICATION_JSON)
+            .body(Map.of(
+                "user_id", userId,
+                "result_url", resultUrl,
+                "ttl_sec", validFor.toSeconds(),
+                "mark_email_as_verified", true))
+            .retrieve()
+            .body(Auth0Models.Ticket.class);
+        return ticket.ticket();
     }
 
     /** Fetches a Management API token with the client credentials grant, reusing it until it's about to expire. */

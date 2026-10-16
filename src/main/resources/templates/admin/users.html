@@ -6,7 +6,10 @@
 <main class="wide">
     <section class="card">
         <span class="badge admin">ADMIN</span>
-        <h1>Users</h1>
+        <div class="title-row">
+            <h1>Users</h1>
+            <a class="button" th:href="@{/admin/users/new}">+ New user</a>
+        </div>
         <p class="muted-text"><span th:text="${total}">0</span> users can sign in to this app.
             Click a user to change their roles.</p>
         <table>

@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments/layout :: head('New user')}"></head>
+<body>
+<header th:replace="~{fragments/layout :: nav}"></header>
+<main>
+    <p><a th:href="@{/admin/users}">← All users</a></p>
+    <div th:if="${error}" class="flash error" th:text="${error}">Error</div>
+
+    <section class="card">
+        <span class="badge admin">ADMIN</span>
+        <h1>New user</h1>
+        <form th:action="@{/admin/users}" method="post" class="stacked">
+            <label>Email
+                <input type="email" name="email" required autocomplete="off" th:value="${form.email()}">
+            </label>
+            <label>Name <span class="muted-text">(optional)</span>
+                <input type="text" name="name" autocomplete="off" th:value="${form.name()}">
+            </label>
+            <label>Initial password <span class="muted-text">(optional)</span>
+                <input type="password" name="password" autocomplete="new-password">
+                <span class="muted-text small">Leave blank (recommended) to get a one-time link the user opens to
+                    choose their own password. If you set one, it must meet your Auth0 password policy.</span>
+            </label>
+
+            <fieldset>
+                <legend>Roles</legend>
+                <label th:each="role : ${allRoles}" class="role-option">
+                    <input type="checkbox" name="roleIds" th:value="${role.id}"
+                           th:checked="${#lists.contains(form.roleIds(), role.id)}">
+                    <strong th:text="${role.name}">member</strong>
+                    <span class="muted-text" th:text="${role.description}">description</span>
+                </label>
+                <p th:if="${#lists.isEmpty(allRoles)}" class="muted-text">No roles exist yet.</p>
+            </fieldset>
+
+            <button class="button" type="submit">Create user</button>
+        </form>
+    </section>
+</main>
+</body>
+</html>

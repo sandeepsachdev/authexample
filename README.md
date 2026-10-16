@@ -11,6 +11,7 @@ with Spring Security's built-in OpenID Connect support, packaged to deploy on
 | `/members` | **`member` or `admin` role** | Members-only page |
 | `/admin` | **`admin` role** | Admin-only page |
 | `/admin/users` | **`admin` role** | Every user who can sign in, with their roles; edit a user's roles |
+| `/admin/users/new` | **`admin` role** | Create a new user and choose their roles |
 | `/logout` (POST) | signed in | Ends the local session *and* the Auth0 session |
 | `/actuator/health` | public | Health check used by Railway |
 
@@ -209,6 +210,8 @@ the login application, so the browser-facing app never holds admin powers over y
    | `read:role_members` | see who has each role (user list) |
    | `create:role_members` | give a user a role |
    | `delete:role_members` | take a role away |
+| `create:users` | create new users |
+| `create:user_tickets` | create the "choose your password" link for a new user |
 
 5. Click **Authorize**.
 6. On the new app's **Settings** tab, copy the **Client ID** and **Client Secret**.
@@ -237,6 +240,25 @@ Until they're set, the app still runs; `/admin/users` just shows these setup ste
 3. The user gets the new access the **next time they log in**. Their current session
    keeps the old roles until they log out and back in.
 
+### 5d. Create users
+
+1. **Admin → Open user management → + New user**.
+2. Enter the email, optionally a name, and tick their roles.
+3. Leave **Initial password** blank (recommended) and click **Create user**. The next page
+   shows a **one-time link** valid for 7 days. Copy it and send it to the person; they open
+   it, choose their own password, and land on the app's home page, ready to log in.
+   Opening the link also marks their email as verified. The link is shown only once.
+   Alternatively, type an initial password and send it to them yourself. It must meet the
+   connection's password policy (Auth0 → Authentication → Database →
+   Username-Password-Authentication → Password Policy); if it doesn't, the form shows Auth0's error.
+
+New users are added to the `Username-Password-Authentication` database connection. To
+use another one, set `AUTH0_DB_CONNECTION` to its name.
+
+**Only admins should create accounts?** By default anyone can sign up on the Auth0 login
+page. To turn that off: **Authentication → Database → Username-Password-Authentication**,
+then switch on **Disable Sign Ups**. Admin-created users can still log in.
+
 Notes:
 - Admins can't remove their own `admin` role from this page, so you can't
   accidentally lock everyone out. Another admin (or the Auth0 dashboard) can.
@@ -257,5 +279,8 @@ Notes:
 | Profile says *Roles: none* although roles are assigned | Check the Action is **deployed** and in the **post-login** flow, then log out and back in. |
 | User management shows *Auth0 returned an error* 401 | `AUTH0_MGMT_CLIENT_ID` / `AUTH0_MGMT_CLIENT_SECRET` are wrong, or the M2M app isn't authorized for the Management API. |
 | User management shows *Auth0 returned an error* 403 *Insufficient scope* | Add the missing permission from 5a to the M2M app. |
+| *The user already exists.* when creating a user | That email already has an account; find it in the user list. |
+| *PasswordStrengthError* when creating a user | Pick a stronger password, or leave it blank to send a setup link. |
+| *Insufficient scope ... create:users* / *create:user_tickets* | Add the two newer permissions from 5a to the M2M app. |
 | Roles changed but the user still has old access | They need to log out and back in. |
 | Roles claim is in the token but still *none* | The claim name must equal `AUTH0_ROLES_CLAIM` (default `https://authexample.demo/roles`). |

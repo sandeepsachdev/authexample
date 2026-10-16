@@ -31,6 +31,10 @@ public final class Auth0Models {
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
+    public record Ticket(String ticket) {
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
     @JsonNaming(PropertyNamingStrategies.SnakeCaseStrategy.class)
     record TokenResponse(String accessToken, long expiresIn) {
     }

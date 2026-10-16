@@ -4,6 +4,7 @@ import static org.hamcrest.Matchers.containsString;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -15,6 +16,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.flash;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.redirectedUrl;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.view;
+import static org.hamcrest.Matchers.not;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -160,5 +163,91 @@ class UserAdminControllerTests {
         mvc.perform(get("/admin/users").with(admin("auth0|me")))
             .andExpect(status().isBadGateway())
             .andExpect(content().string(containsString("Insufficient scope")));
+    }
+
+    private static final Auth0Models.User GRACE =
+        new Auth0Models.User("auth0|grace", "grace@example.com", "Grace Hopper", null, null, 0, false);
+
+    @Test
+    void newUserFormListsRoles() throws Exception {
+        mvc.perform(get("/admin/users/new").with(admin("auth0|me")))
+            .andExpect(status().isOk())
+            .andExpect(content().string(containsString("New user")))
+            .andExpect(content().string(containsString("value=\"rol_member\"")));
+    }
+
+    @Test
+    void membersCannotCreateUsers() throws Exception {
+        mvc.perform(post("/admin/users").param("email", "x@example.com")
+                .with(oidcLogin().authorities(new SimpleGrantedAuthority("ROLE_MEMBER"))).with(csrf()))
+            .andExpect(status().isForbidden());
+        verify(auth0, never()).createUser(any(), any(), any(), any());
+    }
+
+    @Test
+    void createsUserWithRolesAndSetupLink() throws Exception {
+        when(auth0.createUser(eq("Username-Password-Authentication"), eq("grace@example.com"), eq("Grace Hopper"),
+            anyString())).thenReturn(GRACE);
+        when(auth0.createPasswordSetupLink("auth0|grace", "http://localhost/", UserAdminController.SETUP_LINK_VALIDITY))
+            .thenReturn("https://example.auth0.com/lo/reset?ticket=abc");
+
+        mvc.perform(post("/admin/users")
+                .param("email", " grace@example.com ")
+                .param("name", "Grace Hopper")
+                .param("password", "")
+                .param("roleIds", "rol_member", "rol_unknown")
+                .with(admin("auth0|me")).with(csrf()))
+            .andExpect(status().is3xxRedirection())
+            .andExpect(redirectedUrl("/admin/users/auth0%7Cgrace"))
+            .andExpect(flash().attribute("message", "User created."))
+            .andExpect(flash().attribute("setupLink", "https://example.auth0.com/lo/reset?ticket=abc"));
+
+        // Unknown role IDs are dropped; a strong random password is generated.
+        verify(auth0).assignRoles("auth0|grace", List.of("rol_member"));
+        verify(auth0).createUser(any(), any(), any(), org.mockito.ArgumentMatchers.argThat(p -> p.length() >= 32));
+    }
+
+    @Test
+    void createsUserWithAdminChosenPasswordAndNoLink() throws Exception {
+        when(auth0.createUser(any(), eq("grace@example.com"), any(), eq("Chosen-Pa55word!"))).thenReturn(GRACE);
+
+        mvc.perform(post("/admin/users")
+                .param("email", "grace@example.com")
+                .param("password", "Chosen-Pa55word!")
+                .with(admin("auth0|me")).with(csrf()))
+            .andExpect(status().is3xxRedirection())
+            .andExpect(flash().attributeCount(1));
+
+        verify(auth0, never()).createPasswordSetupLink(any(), any(), any());
+    }
+
+    @Test
+    void showsAuth0ValidationErrorsOnTheFormWithoutEchoingPassword() throws Exception {
+        when(auth0.createUser(any(), any(), any(), any())).thenThrow(HttpClientErrorException.create(
+            HttpStatus.BAD_REQUEST, "Bad Request", HttpHeaders.EMPTY,
+            "{\"statusCode\":400,\"message\":\"PasswordStrengthError: Password is too weak\"}"
+                .getBytes(StandardCharsets.UTF_8), StandardCharsets.UTF_8));
+
+        mvc.perform(post("/admin/users")
+                .param("email", "grace@example.com")
+                .param("password", "weakpass123")
+                .param("roleIds", "rol_member")
+                .with(admin("auth0|me")).with(csrf()))
+            .andExpect(status().isOk())
+            .andExpect(view().name("admin/user-new"))
+            .andExpect(content().string(containsString("PasswordStrengthError: Password is too weak")))
+            .andExpect(content().string(containsString("value=\"grace@example.com\"")))
+            .andExpect(content().string(containsString("value=\"rol_member\" checked")))
+            .andExpect(content().string(not(containsString("weakpass123"))));
+
+        verify(auth0, never()).assignRoles(any(), any());
+    }
+
+    @Test
+    void rejectsInvalidEmailBeforeCallingAuth0() throws Exception {
+        mvc.perform(post("/admin/users").param("email", "not-an-email").with(admin("auth0|me")).with(csrf()))
+            .andExpect(status().isOk())
+            .andExpect(content().string(containsString("Enter a valid email address.")));
+        verify(auth0, never()).createUser(any(), any(), any(), any());
     }
 }

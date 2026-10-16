@@ -107,4 +107,33 @@ class Auth0ManagementClientTests {
         assertThat(new Auth0ManagementClient(RestClient.builder(), "example.auth0.com", "", "", Clock.systemUTC())
             .isConfigured()).isFalse();
     }
+
+    @Test
+    void createsUserAndPasswordSetupLink() {
+        expectTokenRequest();
+        server.expect(requestTo("https://example.auth0.com/api/v2/users"))
+            .andExpect(method(HttpMethod.POST))
+            .andExpect(content().json("""
+                {"connection":"Username-Password-Authentication","email":"grace@example.com",
+                 "password":"S3cret!pass","name":"Grace Hopper"}""", true))
+            .andRespond(withSuccess("""
+                {"user_id":"auth0|new","email":"grace@example.com","name":"Grace Hopper"}""",
+                MediaType.APPLICATION_JSON));
+        server.expect(requestTo("https://example.auth0.com/api/v2/tickets/password-change"))
+            .andExpect(method(HttpMethod.POST))
+            .andExpect(content().json("""
+                {"user_id":"auth0|new","result_url":"https://app.example.com/","ttl_sec":604800,
+                 "mark_email_as_verified":true}""", true))
+            .andRespond(withSuccess("""
+                {"ticket":"https://example.auth0.com/lo/reset?ticket=abc#"}""", MediaType.APPLICATION_JSON));
+
+        var user = client.createUser("Username-Password-Authentication", "grace@example.com", " Grace Hopper ",
+            "S3cret!pass");
+        var link = client.createPasswordSetupLink(user.userId(), "https://app.example.com/",
+            java.time.Duration.ofDays(7));
+
+        assertThat(user.userId()).isEqualTo("auth0|new");
+        assertThat(link).isEqualTo("https://example.auth0.com/lo/reset?ticket=abc#");
+        server.verify();
+    }
 }

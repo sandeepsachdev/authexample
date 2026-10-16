@@ -39,3 +39,5 @@ app:
     management:
       client-id: ${AUTH0_MGMT_CLIENT_ID:}
       client-secret: ${AUTH0_MGMT_CLIENT_SECRET:}
+      # Auth0 database connection that admin-created users are added to.
+      connection: ${AUTH0_DB_CONNECTION:Username-Password-Authentication}
