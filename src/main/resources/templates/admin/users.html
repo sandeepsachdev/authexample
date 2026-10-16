@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments/layout :: head('Users')}"></head>
+<body>
+<header th:replace="~{fragments/layout :: nav}"></header>
+<main class="wide">
+    <section class="card">
+        <span class="badge admin">ADMIN</span>
+        <h1>Users</h1>
+        <p class="muted-text"><span th:text="${total}">0</span> users can sign in to this app.
+            Click a user to change their roles.</p>
+        <table>
+            <thead>
+            <tr><th>User</th><th>Roles</th><th>Last login</th><th>Logins</th></tr>
+            </thead>
+            <tbody>
+            <tr th:each="u : ${users}">
+                <td>
+                    <a th:href="@{/admin/users/{id}(id=${u.userId})}" th:text="${u.displayName()}">Ada</a>
+                    <span th:if="${u.blocked}" class="badge blocked">BLOCKED</span>
+                    <div class="muted-text small" th:if="${u.email != u.displayName()}" th:text="${u.email}">ada@example.com</div>
+                </td>
+                <td>
+                    <span th:each="r : ${rolesByUser[u.userId]}" class="badge"
+                          th:classappend="${#strings.equalsIgnoreCase(r, 'admin')} ? 'admin'" th:text="${r}">member</span>
+                    <span th:if="${rolesByUser[u.userId] == null}" class="muted-text">—</span>
+                </td>
+                <td th:text="${u.lastLogin != null} ? ${#strings.replace(#strings.substring(u.lastLogin, 0, 16), 'T', ' ')} : 'never'">2026-10-16 09:00</td>
+                <td th:text="${u.loginsCount ?: 0}">3</td>
+            </tr>
+            </tbody>
+        </table>
+        <p class="pager">
+            <a th:if="${hasPrevious}" th:href="@{/admin/users(page=${page - 1})}">← Previous</a>
+            <span th:text="'Page ' + ${page + 1}">Page 1</span>
+            <a th:if="${hasNext}" th:href="@{/admin/users(page=${page + 1})}">Next →</a>
+        </p>
+    </section>
+</main>
+</body>
+</html>

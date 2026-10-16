@@ -10,6 +10,7 @@ with Spring Security's built-in OpenID Connect support, packaged to deploy on
 | `/profile` | **requires login** | Your name, email, avatar, roles and all ID token claims |
 | `/members` | **`member` or `admin` role** | Members-only page |
 | `/admin` | **`admin` role** | Admin-only page |
+| `/admin/users` | **`admin` role** | Every user who can sign in, with their roles; edit a user's roles |
 | `/logout` (POST) | signed in | Ends the local session *and* the Auth0 session |
 | `/actuator/health` | public | Health check used by Railway |
 
@@ -35,7 +36,10 @@ src/main/java/com/example/authexample/
 ├── config/SecurityConfig.java   # route protection, login, Auth0 logout, role hierarchy
 ├── config/Auth0RolesMapper.java # Auth0 roles claim -> Spring Security roles
 ├── web/HomeController.java      # "/" and "/profile"
-└── web/AccessController.java    # "/members", "/admin", "/access-denied"
+├── web/AccessController.java    # "/members", "/admin", "/access-denied"
+└── admin/
+    ├── Auth0ManagementClient.java  # calls the Auth0 Management API
+    └── UserAdminController.java    # "/admin/users": list users, edit roles
 auth0/add-roles-to-tokens.js     # Post-Login Action to paste into Auth0
 src/main/resources/
 ├── application.yml              # Auth0 + PORT config (from env vars)
@@ -88,6 +92,9 @@ on `/actuator/health`), so there's nothing else to configure.
    - `AUTH0_DOMAIN`
    - `AUTH0_CLIENT_ID`
    - `AUTH0_CLIENT_SECRET`
+
+   - `AUTH0_MGMT_CLIENT_ID` and `AUTH0_MGMT_CLIENT_SECRET` (optional, for the
+     admin *Users* page, see [User management](#5-user-management-for-admins))
 
    (Railway sets `PORT` itself; the app listens on it automatically.)
 4. **Settings → Networking → Generate Domain** to get a public
@@ -175,6 +182,69 @@ To protect a new page, add a rule in `SecurityConfig`, e.g.
 `@EnableMethodSecurity`). To show or hide parts of a page, use
 `sec:authorize="hasRole('ADMIN')"` in a Thymeleaf template.
 
+## 5. User management for admins
+
+Admins can open **Admin → Open user management** (`/admin/users`) to see every user
+in your Auth0 tenant (everyone who can sign in), with their roles, last login and
+login count, and click a user to tick or untick their roles.
+
+Auth0 calls these groups **roles**: the `member` and `admin` roles from step 4 are
+what the page maintains, and any role you add in Auth0 shows up automatically.
+
+The app reads and changes users through the **Auth0 Management API**, which needs
+its own credentials: a Machine to Machine (M2M) application. This is separate from
+the login application, so the browser-facing app never holds admin powers over your tenant.
+
+### 5a. Create a Machine to Machine application
+
+1. **Applications → Applications → + Create Application**.
+2. Name: `authexample user admin`, type **Machine to Machine Applications** → **Create**.
+3. When asked which API to authorize, choose **Auth0 Management API**.
+4. Under **Permissions**, tick exactly these (use the filter box):
+
+   | Permission | Used for |
+   |------------|----------|
+   | `read:users` | list users and show a user |
+   | `read:roles` | list the roles and a user's roles |
+   | `read:role_members` | see who has each role (user list) |
+   | `create:role_members` | give a user a role |
+   | `delete:role_members` | take a role away |
+
+5. Click **Authorize**.
+6. On the new app's **Settings** tab, copy the **Client ID** and **Client Secret**.
+
+To change the permissions later: **Applications → APIs → Auth0 Management API →
+Machine To Machine Applications**, expand your app with the ⌄ arrow, tick the
+permissions and click **Update**.
+
+### 5b. Give the app the credentials
+
+Locally:
+
+```bash
+export AUTH0_MGMT_CLIENT_ID=...
+export AUTH0_MGMT_CLIENT_SECRET=...
+```
+
+On Railway: add both under the service's **Variables** tab. Railway redeploys automatically.
+
+Until they're set, the app still runs; `/admin/users` just shows these setup steps.
+
+### 5c. Use it
+
+1. Log in as a user with the `admin` role → **Admin** → **Open user management**.
+2. Click a user, tick/untick roles, **Save roles**.
+3. The user gets the new access the **next time they log in**. Their current session
+   keeps the old roles until they log out and back in.
+
+Notes:
+- Admins can't remove their own `admin` role from this page, so you can't
+  accidentally lock everyone out. Another admin (or the Auth0 dashboard) can.
+- "Users who can access the system" means every user in the tenant. If you have
+  several apps in one tenant, all their users appear.
+- The page loads members role by role rather than user by user, to stay within the
+  Management API rate limits of free Auth0 tenants.
+
 ## Troubleshooting
 
 | Symptom | Fix |
@@ -185,4 +255,7 @@ To protect a new page, add a rule in `SecurityConfig`, e.g.
 | Callback URL starts with `http://` on Railway | Make sure `server.forward-headers-strategy: framework` is still in `application.yml`. |
 | Logout shows an Auth0 error page | Add `https://<your-domain>/` to Allowed Logout URLs. |
 | Profile says *Roles: none* although roles are assigned | Check the Action is **deployed** and in the **post-login** flow, then log out and back in. |
+| User management shows *Auth0 returned an error* 401 | `AUTH0_MGMT_CLIENT_ID` / `AUTH0_MGMT_CLIENT_SECRET` are wrong, or the M2M app isn't authorized for the Management API. |
+| User management shows *Auth0 returned an error* 403 *Insufficient scope* | Add the missing permission from 5a to the M2M app. |
+| Roles changed but the user still has old access | They need to log out and back in. |
 | Roles claim is in the token but still *none* | The claim name must equal `AUTH0_ROLES_CLAIM` (default `https://authexample.demo/roles`). |

@@ -1,0 +1,120 @@
+package com.example.authexample.admin;
+
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.TreeMap;
+
+import org.springframework.http.HttpStatus;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.core.oidc.user.OidcUser;
+import org.springframework.stereotype.Controller;
+import org.springframework.ui.Model;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.client.RestClientResponseException;
+import org.springframework.web.servlet.mvc.support.RedirectAttributes;
+
+/**
+ * Lets admins see every user in the Auth0 tenant and change their roles ("groups").
+ * Lives under /admin/**, so SecurityConfig already restricts it to ROLE_ADMIN.
+ */
+@Controller
+@RequestMapping("/admin/users")
+public class UserAdminController {
+
+    static final int PER_PAGE = 25;
+    private static final String ADMIN_ROLE = "admin";
+
+    private final Auth0ManagementClient auth0;
+
+    public UserAdminController(Auth0ManagementClient auth0) {
+        this.auth0 = auth0;
+    }
+
+    @GetMapping
+    public String list(@RequestParam(defaultValue = "0") int page, Model model) {
+        if (!auth0.isConfigured()) {
+            return "admin/users-setup";
+        }
+        // One call per role (instead of one per user) keeps us well under Auth0's rate limits.
+        Map<String, List<String>> rolesByUser = new TreeMap<>();
+        for (Auth0Models.Role role : auth0.listRoles()) {
+            for (String userId : auth0.roleMemberIds(role.id())) {
+                rolesByUser.computeIfAbsent(userId, id -> new ArrayList<>()).add(role.name());
+            }
+        }
+        Auth0Models.UserPage users = auth0.listUsers(Math.max(page, 0), PER_PAGE);
+
+        model.addAttribute("users", users.users());
+        model.addAttribute("rolesByUser", rolesByUser);
+        model.addAttribute("total", users.total());
+        model.addAttribute("page", page);
+        model.addAttribute("hasPrevious", page > 0);
+        model.addAttribute("hasNext", (long) (page + 1) * PER_PAGE < users.total());
+        return "admin/users";
+    }
+
+    @GetMapping("/{userId}")
+    public String edit(@PathVariable String userId, Model model) {
+        if (!auth0.isConfigured()) {
+            return "admin/users-setup";
+        }
+        model.addAttribute("user", auth0.getUser(userId));
+        model.addAttribute("allRoles", auth0.listRoles());
+        model.addAttribute("assignedRoleIds", auth0.getUserRoles(userId).stream().map(Auth0Models.Role::id).toList());
+        return "admin/user-edit";
+    }
+
+    @PostMapping("/{userId}/roles")
+    public String updateRoles(@PathVariable String userId,
+            @RequestParam(name = "roleIds", required = false) List<String> selected,
+            @AuthenticationPrincipal OidcUser currentUser,
+            RedirectAttributes redirect) {
+        Set<String> wanted = selected == null ? Set.of() : new HashSet<>(selected);
+        List<Auth0Models.Role> allRoles = auth0.listRoles();
+        Set<String> current = new HashSet<>(auth0.getUserRoles(userId).stream().map(Auth0Models.Role::id).toList());
+
+        // Stop admins from removing their own admin role and locking themselves out.
+        boolean editingSelf = userId.equals(currentUser.getSubject());
+        boolean droppingAdmin = allRoles.stream()
+            .anyMatch(r -> r.name().equalsIgnoreCase(ADMIN_ROLE) && current.contains(r.id()) && !wanted.contains(r.id()));
+        if (editingSelf && droppingAdmin) {
+            redirect.addFlashAttribute("error", "You can't remove your own admin role. Ask another admin to do it.");
+            return "redirect:/admin/users/{userId}";
+        }
+
+        List<String> toAdd = new ArrayList<>();
+        List<String> toRemove = new ArrayList<>();
+        for (Auth0Models.Role role : allRoles) {
+            if (wanted.contains(role.id()) && !current.contains(role.id())) {
+                toAdd.add(role.id());
+            } else if (!wanted.contains(role.id()) && current.contains(role.id())) {
+                toRemove.add(role.id());
+            }
+        }
+        auth0.assignRoles(userId, toAdd);
+        auth0.removeRoles(userId, toRemove);
+
+        redirect.addFlashAttribute("message", toAdd.isEmpty() && toRemove.isEmpty()
+            ? "No changes."
+            : "Roles updated. They take effect the next time this user logs in.");
+        return "redirect:/admin/users/{userId}";
+    }
+
+    /** Shows Auth0 errors (e.g. a missing Management API scope) instead of a stack trace. */
+    @ExceptionHandler(RestClientResponseException.class)
+    @ResponseStatus(HttpStatus.BAD_GATEWAY)
+    public String auth0Error(RestClientResponseException ex, Model model) {
+        model.addAttribute("status", ex.getStatusCode().value());
+        model.addAttribute("details", ex.getResponseBodyAsString());
+        return "admin/users-error";
+    }
+}

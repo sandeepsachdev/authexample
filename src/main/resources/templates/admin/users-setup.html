@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments/layout :: head('Users')}"></head>
+<body>
+<header th:replace="~{fragments/layout :: nav}"></header>
+<main>
+    <section class="card">
+        <h1>User management isn't set up yet</h1>
+        <p>To list users and change their roles, the app needs access to the Auth0 Management API:</p>
+        <ol>
+            <li>In Auth0, go to <em>Applications → Applications → Create Application</em> and create a
+                <strong>Machine to Machine</strong> application.</li>
+            <li>Authorize it for the <strong>Auth0 Management API</strong> with the permissions
+                <code>read:users</code>, <code>read:roles</code>, <code>read:role_members</code>,
+                <code>create:role_members</code> and <code>delete:role_members</code>.</li>
+            <li>Set <code>AUTH0_MGMT_CLIENT_ID</code> and <code>AUTH0_MGMT_CLIENT_SECRET</code> to its
+                Client ID and Client Secret (in Railway: <em>Variables</em>) and restart the app.</li>
+        </ol>
+        <p>The README has step-by-step instructions.</p>
+    </section>
+</main>
+</body>
+</html>

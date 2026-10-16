@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments/layout :: head('Edit user')}"></head>
+<body>
+<header th:replace="~{fragments/layout :: nav}"></header>
+<main>
+    <p><a th:href="@{/admin/users}">← All users</a></p>
+    <div th:if="${message}" class="flash ok" th:text="${message}">Saved</div>
+    <div th:if="${error}" class="flash error" th:text="${error}">Error</div>
+
+    <section class="card">
+        <img th:if="${user.picture}" th:src="${user.picture}" class="avatar" alt="avatar">
+        <h1 th:text="${user.displayName()}">Ada</h1>
+        <p th:if="${user.email}" th:text="${user.email}">ada@example.com</p>
+        <p class="muted-text small"><code th:text="${user.userId}">auth0|123</code></p>
+    </section>
+
+    <section class="card">
+        <h2>Roles</h2>
+        <form th:action="@{/admin/users/{id}/roles(id=${user.userId})}" method="post">
+            <label th:each="role : ${allRoles}" class="role-option">
+                <input type="checkbox" name="roleIds" th:value="${role.id}"
+                       th:checked="${#lists.contains(assignedRoleIds, role.id)}">
+                <strong th:text="${role.name}">admin</strong>
+                <span class="muted-text" th:text="${role.description}">description</span>
+            </label>
+            <p th:if="${#lists.isEmpty(allRoles)}" class="muted-text">No roles exist yet. Create them in
+                Auth0 under User Management → Roles.</p>
+            <button class="button" type="submit">Save roles</button>
+        </form>
+        <p class="muted-text small">Changes apply the next time the user logs in.</p>
+    </section>
+</main>
+</body>
+</html>

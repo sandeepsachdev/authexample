@@ -33,3 +33,9 @@ app:
     # Custom ID-token claim that the Auth0 Post-Login Action fills with the user's roles.
     # Must match the namespace in auth0/add-roles-to-tokens.js.
     roles-claim: ${AUTH0_ROLES_CLAIM:https://authexample.demo/roles}
+    domain: ${AUTH0_DOMAIN}
+    # Machine-to-Machine app authorized for the Auth0 Management API. Used by the
+    # admin "Users" page. Optional: the page explains how to set it up if missing.
+    management:
+      client-id: ${AUTH0_MGMT_CLIENT_ID:}
+      client-secret: ${AUTH0_MGMT_CLIENT_SECRET:}

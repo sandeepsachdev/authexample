@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments/layout :: head('Auth0 error')}"></head>
+<body>
+<header th:replace="~{fragments/layout :: nav}"></header>
+<main>
+    <section class="card">
+        <h1>Auth0 returned an error</h1>
+        <p>The Auth0 Management API answered with HTTP <strong th:text="${status}">403</strong>:</p>
+        <pre th:text="${details}">{"message":"Insufficient scope"}</pre>
+        <p>A <strong>401</strong> usually means <code>AUTH0_MGMT_CLIENT_ID</code> / <code>AUTH0_MGMT_CLIENT_SECRET</code>
+            are wrong. A <strong>403</strong> usually means the Machine to Machine app is missing one of the
+            permissions <code>read:users</code>, <code>read:roles</code>, <code>read:role_members</code>,
+            <code>create:role_members</code>, <code>delete:role_members</code>
+            (Auth0 → Applications → APIs → Auth0 Management API → Machine To Machine Applications).</p>
+        <p><a th:href="@{/admin/users}">Try again</a></p>
+    </section>
+</main>
+</body>
+</html>

@@ -13,6 +13,12 @@
             <code>.requestMatchers("/admin/**").hasRole("ADMIN")</code>. Admins can also open the
             Members area because of the role hierarchy <code>ADMIN &gt; MEMBER</code>.</p>
     </section>
+
+    <section class="card">
+        <h2>Manage users</h2>
+        <p>See everyone who can sign in to this app and change their roles.</p>
+        <a class="button" th:href="@{/admin/users}">Open user management</a>
+    </section>
 </main>
 </body>
 </html>
