@@ -1,5 +1,6 @@
 package com.example.authexample.admin;
 
+import java.time.Clock;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -8,10 +9,16 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpSession;
+
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.core.oidc.user.OidcUser;
+import org.springframework.security.web.savedrequest.HttpSessionRequestCache;
+import org.springframework.security.web.savedrequest.RequestCache;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -30,6 +37,8 @@ import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import com.example.authexample.config.StepUpAuthorizationRequestResolver;
+
 /**
  * Lets admins see every user in the Auth0 tenant and change their roles ("groups").
  * Lives under /admin/**, so SecurityConfig already restricts it to ROLE_ADMIN.
@@ -45,12 +54,17 @@ public class UserAdminController {
     private final Auth0ManagementClient auth0;
     private final String connection;
     private final ObjectMapper json;
+    private final Duration stepUpMaxAge;
+    private final Clock clock = Clock.systemUTC();
+    private final RequestCache requestCache = new HttpSessionRequestCache();
 
     public UserAdminController(Auth0ManagementClient auth0,
             @Value("${app.auth0.management.connection}") String connection,
+            @Value("${app.auth0.step-up-max-age}") Duration stepUpMaxAge,
             ObjectMapper json) {
         this.auth0 = auth0;
         this.connection = connection;
+        this.stepUpMaxAge = stepUpMaxAge;
         this.json = json;
     }
 
@@ -152,40 +166,126 @@ public class UserAdminController {
         return "admin/user-edit";
     }
 
+    /**
+     * Saves the ticked roles. Removing roles happens straight away, but adding one is a
+     * privilege grant, so it first requires the admin to have passed MFA recently
+     * (step-up authentication). Otherwise the change is parked in the session and the
+     * admin is sent to verify.
+     */
     @PostMapping("/{userId}/roles")
     public String updateRoles(@PathVariable String userId,
             @RequestParam(name = "roleIds", required = false) List<String> selected,
             @AuthenticationPrincipal OidcUser currentUser,
+            HttpSession session,
             RedirectAttributes redirect) {
         Set<String> wanted = selected == null ? Set.of() : new HashSet<>(selected);
-        List<Auth0Models.Role> allRoles = auth0.listRoles();
-        Set<String> current = new HashSet<>(auth0.getUserRoles(userId).stream().map(Auth0Models.Role::id).toList());
+        RoleChange change = RoleChange.of(auth0.listRoles(), auth0.getUserRoles(userId), wanted);
 
-        // Stop admins from removing their own admin role and locking themselves out.
-        boolean editingSelf = userId.equals(currentUser.getSubject());
-        boolean droppingAdmin = allRoles.stream()
-            .anyMatch(r -> r.name().equalsIgnoreCase(ADMIN_ROLE) && current.contains(r.id()) && !wanted.contains(r.id()));
-        if (editingSelf && droppingAdmin) {
+        if (selfLockout(userId, currentUser, change)) {
             redirect.addFlashAttribute("error", "You can't remove your own admin role. Ask another admin to do it.");
             return "redirect:/admin/users/{userId}";
         }
-
-        List<String> toAdd = new ArrayList<>();
-        List<String> toRemove = new ArrayList<>();
-        for (Auth0Models.Role role : allRoles) {
-            if (wanted.contains(role.id()) && !current.contains(role.id())) {
-                toAdd.add(role.id());
-            } else if (!wanted.contains(role.id()) && current.contains(role.id())) {
-                toRemove.add(role.id());
-            }
+        if (!change.toAdd().isEmpty() && !RecentMfa.verified(currentUser, stepUpMaxAge, clock)) {
+            session.setAttribute(PendingRoleChange.SESSION_KEY, new PendingRoleChange(userId, wanted));
+            return "redirect:/admin/users/{userId}/roles/verify";
         }
-        auth0.assignRoles(userId, toAdd);
-        auth0.removeRoles(userId, toRemove);
+        return apply(userId, change, redirect);
+    }
 
-        redirect.addFlashAttribute("message", toAdd.isEmpty() && toRemove.isEmpty()
+    /**
+     * Step-up checkpoint. Without a recent MFA login, remember this URL and send the admin
+     * to Auth0 to log in again with MFA; Spring Security brings them back here afterwards.
+     * With one, show the pending change for a final confirmation.
+     */
+    @GetMapping("/{userId}/roles/verify")
+    public String verifyRoleChange(@PathVariable String userId,
+            @AuthenticationPrincipal OidcUser currentUser,
+            HttpServletRequest request, HttpServletResponse response,
+            HttpSession session, Model model) {
+        PendingRoleChange pending = pendingFor(userId, session);
+        if (pending == null) {
+            return "redirect:/admin/users/{userId}";
+        }
+        if (!RecentMfa.verified(currentUser, stepUpMaxAge, clock)) {
+            requestCache.saveRequest(request, response);
+            return "redirect:/oauth2/authorization/auth0?" + StepUpAuthorizationRequestResolver.STEP_UP_PARAMETER;
+        }
+        model.addAttribute("user", auth0.getUser(userId));
+        model.addAttribute("change", RoleChange.of(auth0.listRoles(), auth0.getUserRoles(userId), pending.wantedRoleIds()));
+        return "admin/roles-confirm";
+    }
+
+    /** Applies the parked change once the admin confirms, re-checking MFA in case it went stale. */
+    @PostMapping("/{userId}/roles/apply")
+    public String applyPendingRoleChange(@PathVariable String userId,
+            @AuthenticationPrincipal OidcUser currentUser,
+            HttpSession session, RedirectAttributes redirect) {
+        PendingRoleChange pending = pendingFor(userId, session);
+        if (pending == null) {
+            redirect.addFlashAttribute("error", "Nothing to apply. Please make the change again.");
+            return "redirect:/admin/users/{userId}";
+        }
+        if (!RecentMfa.verified(currentUser, stepUpMaxAge, clock)) {
+            return "redirect:/admin/users/{userId}/roles/verify";
+        }
+        session.removeAttribute(PendingRoleChange.SESSION_KEY);
+        RoleChange change = RoleChange.of(auth0.listRoles(), auth0.getUserRoles(userId), pending.wantedRoleIds());
+        if (selfLockout(userId, currentUser, change)) {
+            redirect.addFlashAttribute("error", "You can't remove your own admin role. Ask another admin to do it.");
+            return "redirect:/admin/users/{userId}";
+        }
+        return apply(userId, change, redirect);
+    }
+
+    /** Drops a parked change, e.g. when the admin cancels on the confirmation page. */
+    @PostMapping("/{userId}/roles/cancel")
+    public String cancelPendingRoleChange(@PathVariable String userId, HttpSession session,
+            RedirectAttributes redirect) {
+        session.removeAttribute(PendingRoleChange.SESSION_KEY);
+        redirect.addFlashAttribute("message", "No changes were made.");
+        return "redirect:/admin/users/{userId}";
+    }
+
+    private String apply(String userId, RoleChange change, RedirectAttributes redirect) {
+        auth0.assignRoles(userId, change.toAdd().stream().map(Auth0Models.Role::id).toList());
+        auth0.removeRoles(userId, change.toRemove().stream().map(Auth0Models.Role::id).toList());
+        redirect.addFlashAttribute("message", change.isEmpty()
             ? "No changes."
             : "Roles updated. They take effect the next time this user logs in.");
         return "redirect:/admin/users/{userId}";
+    }
+
+    /** Stops admins from removing their own admin role and locking themselves out. */
+    private static boolean selfLockout(String userId, OidcUser currentUser, RoleChange change) {
+        return userId.equals(currentUser.getSubject())
+            && change.toRemove().stream().anyMatch(r -> r.name().equalsIgnoreCase(ADMIN_ROLE));
+    }
+
+    private static PendingRoleChange pendingFor(String userId, HttpSession session) {
+        return session.getAttribute(PendingRoleChange.SESSION_KEY) instanceof PendingRoleChange p
+                && p.userId().equals(userId) ? p : null;
+    }
+
+    /** Which roles a save would add and remove, compared with what the user has now. */
+    public record RoleChange(List<Auth0Models.Role> toAdd, List<Auth0Models.Role> toRemove) {
+
+        static RoleChange of(List<Auth0Models.Role> allRoles, List<Auth0Models.Role> currentRoles, Set<String> wanted) {
+            Set<String> current = new HashSet<>(currentRoles.stream().map(Auth0Models.Role::id).toList());
+            List<Auth0Models.Role> toAdd = new ArrayList<>();
+            List<Auth0Models.Role> toRemove = new ArrayList<>();
+            for (Auth0Models.Role role : allRoles) {
+                if (wanted.contains(role.id()) && !current.contains(role.id())) {
+                    toAdd.add(role);
+                } else if (!wanted.contains(role.id()) && current.contains(role.id())) {
+                    toRemove.add(role);
+                }
+            }
+            return new RoleChange(toAdd, toRemove);
+        }
+
+        public boolean isEmpty() {
+            return toAdd.isEmpty() && toRemove.isEmpty();
+        }
     }
 
     /** Shows Auth0 errors (e.g. a missing Management API scope) instead of a stack trace. */

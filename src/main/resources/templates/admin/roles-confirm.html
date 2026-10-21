@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments/layout :: head('Confirm role change')}"></head>
+<body>
+<header th:replace="~{fragments/layout :: nav}"></header>
+<main>
+    <section class="card">
+        <span class="badge admin">ADMIN</span>
+        <h1>Confirm role change</h1>
+        <p class="flash ok">✔ Identity verified with multi-factor authentication.</p>
+        <p>You're about to change the roles of <strong th:text="${user.displayName()}">Ada</strong>
+            <span class="muted-text" th:if="${user.email}" th:text="'(' + ${user.email} + ')'">(ada@example.com)</span>:</p>
+        <ul>
+            <li th:each="role : ${change.toAdd()}">Add <span class="badge"
+                    th:classappend="${#strings.equalsIgnoreCase(role.name, 'admin')} ? 'admin'"
+                    th:text="${role.name}">admin</span></li>
+            <li th:each="role : ${change.toRemove()}">Remove <span class="badge blocked" th:text="${role.name}">member</span></li>
+            <li th:if="${change.isEmpty()}">Nothing. The user already has exactly these roles.</li>
+        </ul>
+        <div class="button-row">
+            <form th:action="@{/admin/users/{id}/roles/apply(id=${user.userId})}" method="post">
+                <button class="button" type="submit">Apply changes</button>
+            </form>
+            <form th:action="@{/admin/users/{id}/roles/cancel(id=${user.userId})}" method="post">
+                <button class="button secondary" type="submit">Cancel</button>
+            </form>
+        </div>
+    </section>
+</main>
+</body>
+</html>

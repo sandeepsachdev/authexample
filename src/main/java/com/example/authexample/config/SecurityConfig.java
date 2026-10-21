@@ -6,6 +6,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.security.access.hierarchicalroles.RoleHierarchy;
 import org.springframework.security.access.hierarchicalroles.RoleHierarchyImpl;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.logout.LogoutSuccessHandler;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
@@ -28,7 +29,8 @@ public class SecurityConfig {
     }
 
     @Bean
-    SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    SecurityFilterChain securityFilterChain(HttpSecurity http, ClientRegistrationRepository clientRegistrations)
+            throws Exception {
         http
             // Access levels: public -> any signed-in user -> MEMBER -> ADMIN.
             .authorizeHttpRequests(auth -> auth
@@ -38,7 +40,10 @@ public class SecurityConfig {
                 .anyRequest().authenticated())
             // Redirects unauthenticated users to Auth0's Universal Login page,
             // and maps the Auth0 roles claim to Spring Security roles on the way back.
+            // "?mfa" on the login URL requests a fresh login with MFA (step-up authentication).
             .oauth2Login(oauth2 -> oauth2
+                .authorizationEndpoint(authz -> authz
+                    .authorizationRequestResolver(new StepUpAuthorizationRequestResolver(clientRegistrations)))
                 .userInfoEndpoint(userInfo -> userInfo.userAuthoritiesMapper(new Auth0RolesMapper(rolesClaim))))
             // Signed-in users without the required role see a friendly 403 page.
             .exceptionHandling(ex -> ex.accessDeniedPage("/access-denied"))

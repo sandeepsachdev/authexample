@@ -41,3 +41,5 @@ app:
       client-secret: ${AUTH0_MGMT_CLIENT_SECRET:}
       # Auth0 database connection that admin-created users are added to.
       connection: ${AUTH0_DB_CONNECTION:Username-Password-Authentication}
+    # Adding a role requires the admin to have passed MFA within this long (step-up auth).
+    step-up-max-age: ${AUTH0_STEP_UP_MAX_AGE:5m}

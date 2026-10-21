@@ -22,6 +22,8 @@ import static org.hamcrest.Matchers.not;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
+import static org.assertj.core.api.Assertions.assertThat;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -64,9 +66,19 @@ class UserAdminControllerTests {
         when(auth0.listRoles()).thenReturn(List.of(ADMIN, MEMBER));
     }
 
+    /** An admin whose last login did not include MFA. */
     private static RequestPostProcessor admin(String subject) {
         return oidcLogin()
             .idToken(t -> t.subject(subject))
+            .authorities(new SimpleGrantedAuthority("ROLE_ADMIN"));
+    }
+
+    /** An admin who logged in with MFA {@code ago} ago (Auth0 sets amr=["mfa"] and auth_time). */
+    private static RequestPostProcessor adminWithMfa(String subject, java.time.Duration ago) {
+        return oidcLogin()
+            .idToken(t -> t.subject(subject)
+                .claim("amr", List.of("mfa"))
+                .claim("auth_time", java.time.Instant.now().minus(ago)))
             .authorities(new SimpleGrantedAuthority("ROLE_ADMIN"));
     }
 
@@ -111,7 +123,7 @@ class UserAdminControllerTests {
         when(auth0.getUserRoles("auth0|ada")).thenReturn(List.of(MEMBER));
 
         mvc.perform(post("/admin/users/{id}/roles", "auth0|ada").param("roleIds", "rol_admin")
-                .with(admin("auth0|me")).with(csrf()))
+                .with(adminWithMfa("auth0|me", java.time.Duration.ofMinutes(1))).with(csrf()))
             .andExpect(status().is3xxRedirection())
             .andExpect(redirectedUrl("/admin/users/auth0%7Cada"))
             .andExpect(flash().attribute("message", containsString("Roles updated")));
@@ -249,5 +261,142 @@ class UserAdminControllerTests {
             .andExpect(status().isOk())
             .andExpect(content().string(containsString("Enter a valid email address.")));
         verify(auth0, never()).createUser(any(), any(), any(), any());
+    }
+
+    // ---- Step-up MFA when adding roles ----
+
+    @Test
+    void addingRoleWithoutMfaParksChangeAndAsksForVerification() throws Exception {
+        when(auth0.getUserRoles("auth0|ada")).thenReturn(List.of(MEMBER));
+        var session = new org.springframework.mock.web.MockHttpSession();
+
+        mvc.perform(post("/admin/users/{id}/roles", "auth0|ada").param("roleIds", "rol_member", "rol_admin")
+                .session(session).with(admin("auth0|me")).with(csrf()))
+            .andExpect(status().is3xxRedirection())
+            .andExpect(redirectedUrl("/admin/users/auth0%7Cada/roles/verify"));
+
+        assertThat(session.getAttribute(PendingRoleChange.SESSION_KEY))
+            .isEqualTo(new PendingRoleChange("auth0|ada", java.util.Set.of("rol_member", "rol_admin")));
+        verify(auth0, never()).assignRoles(any(), any());
+        verify(auth0, never()).removeRoles(any(), any());
+    }
+
+    @Test
+    void mfaFromAnOldLoginDoesNotCount() throws Exception {
+        when(auth0.getUserRoles("auth0|ada")).thenReturn(List.of());
+
+        mvc.perform(post("/admin/users/{id}/roles", "auth0|ada").param("roleIds", "rol_admin")
+                .with(adminWithMfa("auth0|me", java.time.Duration.ofHours(1))).with(csrf()))
+            .andExpect(redirectedUrl("/admin/users/auth0%7Cada/roles/verify"));
+
+        verify(auth0, never()).assignRoles(any(), any());
+    }
+
+    @Test
+    void removingRolesDoesNotNeedMfa() throws Exception {
+        when(auth0.getUserRoles("auth0|ada")).thenReturn(List.of(MEMBER));
+
+        mvc.perform(post("/admin/users/{id}/roles", "auth0|ada").with(admin("auth0|me")).with(csrf()))
+            .andExpect(redirectedUrl("/admin/users/auth0%7Cada"));
+
+        verify(auth0).removeRoles("auth0|ada", List.of("rol_member"));
+    }
+
+    @Test
+    void verifyWithoutMfaSendsAdminToStepUpLoginAndRemembersWhereToComeBack() throws Exception {
+        var session = new org.springframework.mock.web.MockHttpSession();
+        session.setAttribute(PendingRoleChange.SESSION_KEY, new PendingRoleChange("auth0|ada", java.util.Set.of("rol_admin")));
+
+        mvc.perform(get("/admin/users/{id}/roles/verify", "auth0|ada").session(session).with(admin("auth0|me")))
+            .andExpect(redirectedUrl("/oauth2/authorization/auth0?mfa"));
+
+        var saved = (org.springframework.security.web.savedrequest.SavedRequest)
+            session.getAttribute("SPRING_SECURITY_SAVED_REQUEST");
+        assertThat(saved.getRedirectUrl()).contains("/admin/users/auth0%7Cada/roles/verify");
+    }
+
+    @Test
+    void stepUpLoginAsksAuth0ForAFreshLoginWithMfa() throws Exception {
+        String stepUp = mvc.perform(get("/oauth2/authorization/auth0").param("mfa", ""))
+            .andExpect(status().is3xxRedirection())
+            .andReturn().getResponse().getRedirectedUrl();
+        String normal = mvc.perform(get("/oauth2/authorization/auth0"))
+            .andReturn().getResponse().getRedirectedUrl();
+
+        assertThat(stepUp).startsWith("https://example.auth0.com/authorize?")
+            .contains("prompt=login")
+            .contains("acr_values=http://schemas.openid.net/pape/policies/2007/06/multi-factor");
+        assertThat(normal).doesNotContain("prompt=").doesNotContain("acr_values");
+    }
+
+    @Test
+    void verifyWithFreshMfaShowsConfirmation() throws Exception {
+        when(auth0.getUser("auth0|ada")).thenReturn(ADA);
+        when(auth0.getUserRoles("auth0|ada")).thenReturn(List.of(MEMBER));
+        var session = new org.springframework.mock.web.MockHttpSession();
+        session.setAttribute(PendingRoleChange.SESSION_KEY, new PendingRoleChange("auth0|ada", java.util.Set.of("rol_admin")));
+
+        mvc.perform(get("/admin/users/{id}/roles/verify", "auth0|ada").session(session)
+                .with(adminWithMfa("auth0|me", java.time.Duration.ofSeconds(10))))
+            .andExpect(status().isOk())
+            .andExpect(content().string(containsString("Identity verified")))
+            .andExpect(content().string(containsString("Add <span class=\"badge admin\">admin</span>")))
+            .andExpect(content().string(containsString("Remove <span class=\"badge blocked\">member</span>")));
+
+        verify(auth0, never()).assignRoles(any(), any());
+    }
+
+    @Test
+    void applyWithFreshMfaMakesTheChangeOnce() throws Exception {
+        when(auth0.getUserRoles("auth0|ada")).thenReturn(List.of(MEMBER));
+        var session = new org.springframework.mock.web.MockHttpSession();
+        session.setAttribute(PendingRoleChange.SESSION_KEY,
+            new PendingRoleChange("auth0|ada", java.util.Set.of("rol_member", "rol_admin")));
+
+        mvc.perform(post("/admin/users/{id}/roles/apply", "auth0|ada").session(session)
+                .with(adminWithMfa("auth0|me", java.time.Duration.ofMinutes(1))).with(csrf()))
+            .andExpect(redirectedUrl("/admin/users/auth0%7Cada"))
+            .andExpect(flash().attribute("message", containsString("Roles updated")));
+
+        verify(auth0).assignRoles("auth0|ada", List.of("rol_admin"));
+        assertThat(session.getAttribute(PendingRoleChange.SESSION_KEY)).isNull();
+    }
+
+    @Test
+    void applyWithoutMfaGoesBackToVerification() throws Exception {
+        var session = new org.springframework.mock.web.MockHttpSession();
+        session.setAttribute(PendingRoleChange.SESSION_KEY, new PendingRoleChange("auth0|ada", java.util.Set.of("rol_admin")));
+
+        mvc.perform(post("/admin/users/{id}/roles/apply", "auth0|ada").session(session)
+                .with(admin("auth0|me")).with(csrf()))
+            .andExpect(redirectedUrl("/admin/users/auth0%7Cada/roles/verify"));
+
+        verify(auth0, never()).assignRoles(any(), any());
+    }
+
+    @Test
+    void applyIgnoresAChangeParkedForAnotherUser() throws Exception {
+        var session = new org.springframework.mock.web.MockHttpSession();
+        session.setAttribute(PendingRoleChange.SESSION_KEY, new PendingRoleChange("auth0|other", java.util.Set.of("rol_admin")));
+
+        mvc.perform(post("/admin/users/{id}/roles/apply", "auth0|ada").session(session)
+                .with(adminWithMfa("auth0|me", java.time.Duration.ofMinutes(1))).with(csrf()))
+            .andExpect(redirectedUrl("/admin/users/auth0%7Cada"))
+            .andExpect(flash().attribute("error", containsString("Nothing to apply")));
+
+        verify(auth0, never()).assignRoles(any(), any());
+    }
+
+    @Test
+    void cancelDropsTheParkedChange() throws Exception {
+        var session = new org.springframework.mock.web.MockHttpSession();
+        session.setAttribute(PendingRoleChange.SESSION_KEY, new PendingRoleChange("auth0|ada", java.util.Set.of("rol_admin")));
+
+        mvc.perform(post("/admin/users/{id}/roles/cancel", "auth0|ada").session(session)
+                .with(admin("auth0|me")).with(csrf()))
+            .andExpect(redirectedUrl("/admin/users/auth0%7Cada"));
+
+        assertThat(session.getAttribute(PendingRoleChange.SESSION_KEY)).isNull();
+        verify(auth0, never()).assignRoles(any(), any());
     }
 }

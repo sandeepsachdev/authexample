@@ -52,3 +52,7 @@ form.stacked input[type=email], form.stacked input[type=text], form.stacked inpu
 fieldset { border: 1px solid var(--border); border-radius: 8px; padding: .5rem 1rem; }
 legend { font-weight: 600; padding: 0 .3rem; }
 form.stacked button { justify-self: start; }
+.button-row { display: flex; gap: .75rem; flex-wrap: wrap; }
+.button-row form { margin: 0; }
+.button.secondary { background: transparent; color: var(--text); border: 1px solid var(--border); }
+.button.secondary:hover { background: var(--bg); }
