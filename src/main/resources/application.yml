@@ -43,3 +43,6 @@ app:
       connection: ${AUTH0_DB_CONNECTION:Username-Password-Authentication}
     # Adding a role requires the admin to have passed MFA within this long (step-up auth).
     step-up-max-age: ${AUTH0_STEP_UP_MAX_AGE:5m}
+    # Custom ID-token claim the step-up Action sets after challenging for MFA.
+    # Must match the claim in auth0/require-mfa-for-step-up.js.
+    step-up-claim: ${AUTH0_STEP_UP_CLAIM:https://authexample.demo/step_up_mfa}

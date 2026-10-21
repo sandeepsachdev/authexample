@@ -73,11 +73,12 @@ class UserAdminControllerTests {
             .authorities(new SimpleGrantedAuthority("ROLE_ADMIN"));
     }
 
-    /** An admin whose ID token, with amr=["mfa"], was issued {@code ago} ago. */
+    /** An admin whose ID token from a step-up MFA login was issued {@code ago} ago. */
     private static RequestPostProcessor adminWithMfa(String subject, java.time.Duration ago) {
         return oidcLogin()
             .idToken(t -> t.subject(subject)
                 .claim("amr", List.of("mfa"))
+                .claim("https://authexample.demo/step_up_mfa", true)
                 .issuedAt(java.time.Instant.now().minus(ago))
                 // Step-up reuses the Auth0 session, so auth_time can be the original login.
                 .claim("auth_time", java.time.Instant.now().minus(java.time.Duration.ofHours(8))))
@@ -311,6 +312,7 @@ class UserAdminControllerTests {
 
         mvc.perform(get("/admin/users/{id}/roles/verify", "auth0|ada").session(session).with(admin("auth0|me")))
             .andExpect(redirectedUrl("/oauth2/authorization/auth0?mfa"));
+        assertThat(session.getAttribute(UserAdminController.STEP_UP_ATTEMPTED)).isEqualTo("auth0|ada");
 
         var saved = (org.springframework.security.web.savedrequest.SavedRequest)
             session.getAttribute("SPRING_SECURITY_SAVED_REQUEST");
@@ -400,5 +402,51 @@ class UserAdminControllerTests {
 
         assertThat(session.getAttribute(PendingRoleChange.SESSION_KEY)).isNull();
         verify(auth0, never()).assignRoles(any(), any());
+    }
+
+    @Test
+    void mfaEarlierInTheSessionWithoutAStepUpChallengeDoesNotCount() throws Exception {
+        when(auth0.getUserRoles("auth0|ada")).thenReturn(List.of());
+
+        // amr=mfa and a brand-new token, but no step-up claim: Auth0 didn't challenge this time.
+        mvc.perform(post("/admin/users/{id}/roles", "auth0|ada").param("roleIds", "rol_admin")
+                .with(oidcLogin()
+                    .idToken(t -> t.subject("auth0|me").claim("amr", List.of("mfa")).issuedAt(java.time.Instant.now()))
+                    .authorities(new SimpleGrantedAuthority("ROLE_ADMIN")))
+                .with(csrf()))
+            .andExpect(redirectedUrl("/admin/users/auth0%7Cada/roles/verify"));
+
+        verify(auth0, never()).assignRoles(any(), any());
+    }
+
+    @Test
+    void comingBackFromAuth0WithoutStepUpShowsSetupHelpInsteadOfLooping() throws Exception {
+        var session = new org.springframework.mock.web.MockHttpSession();
+        session.setAttribute(PendingRoleChange.SESSION_KEY, new PendingRoleChange("auth0|ada", java.util.Set.of("rol_admin")));
+        session.setAttribute(UserAdminController.STEP_UP_ATTEMPTED, "auth0|ada");
+
+        mvc.perform(get("/admin/users/{id}/roles/verify", "auth0|ada").session(session).with(admin("auth0|me")))
+            .andExpect(status().isOk())
+            .andExpect(view().name("admin/step-up-failed"))
+            .andExpect(content().string(containsString("Require MFA for step-up")));
+
+        // Cleared, so "Try again" goes back to Auth0 rather than straight to this page.
+        assertThat(session.getAttribute(UserAdminController.STEP_UP_ATTEMPTED)).isNull();
+        verify(auth0, never()).assignRoles(any(), any());
+    }
+
+    @Test
+    void successfulStepUpClearsTheAttemptFlag() throws Exception {
+        when(auth0.getUser("auth0|ada")).thenReturn(ADA);
+        when(auth0.getUserRoles("auth0|ada")).thenReturn(List.of());
+        var session = new org.springframework.mock.web.MockHttpSession();
+        session.setAttribute(PendingRoleChange.SESSION_KEY, new PendingRoleChange("auth0|ada", java.util.Set.of("rol_admin")));
+        session.setAttribute(UserAdminController.STEP_UP_ATTEMPTED, "auth0|ada");
+
+        mvc.perform(get("/admin/users/{id}/roles/verify", "auth0|ada").session(session)
+                .with(adminWithMfa("auth0|me", java.time.Duration.ofSeconds(5))))
+            .andExpect(view().name("admin/roles-confirm"));
+
+        assertThat(session.getAttribute(UserAdminController.STEP_UP_ATTEMPTED)).isNull();
     }
 }

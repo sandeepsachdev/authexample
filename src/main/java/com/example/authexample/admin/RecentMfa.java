@@ -3,13 +3,17 @@ package com.example.authexample.admin;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.List;
 
 import org.springframework.security.oauth2.core.oidc.user.OidcUser;
 
 /**
- * Checks the ID token from the user's latest login for a recent MFA challenge:
- * Auth0 lists "mfa" in the {@code amr} (authentication methods) claim when MFA was done.
+ * Checks that the user's current ID token came from a recent step-up MFA challenge.
+ *
+ * The step-up Action (auth0/require-mfa-for-step-up.js) challenges the user for MFA and
+ * adds a custom claim (e.g. "https://authexample.demo/step_up_mfa": true). Auth0 only issues
+ * the token once the challenge is passed, so the claim proves MFA happened in that login.
+ * The standard {@code amr} claim isn't used: Auth0 also sets it when MFA was done earlier in
+ * the session without a new challenge.
  *
  * Freshness uses {@code iat} (when the token was issued), not {@code auth_time}: a step-up
  * that reuses the Auth0 session skips the password, so {@code auth_time} may still be the
@@ -20,10 +24,9 @@ final class RecentMfa {
     private RecentMfa() {
     }
 
-    static boolean verified(OidcUser user, Duration maxAge, Clock clock) {
-        List<String> methods = user.getAuthenticationMethods();
+    static boolean verified(OidcUser user, String stepUpClaim, Duration maxAge, Clock clock) {
         Instant issuedAt = user.getIssuedAt();
-        return methods != null && methods.contains("mfa")
+        return Boolean.TRUE.equals(user.getClaimAsBoolean(stepUpClaim))
             && issuedAt != null
             && !issuedAt.isBefore(clock.instant().minus(maxAge));
     }

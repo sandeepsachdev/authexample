@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments/layout :: head('MFA not completed')}"></head>
+<body>
+<header th:replace="~{fragments/layout :: nav}"></header>
+<main>
+    <section class="card">
+        <h1>MFA check didn't happen</h1>
+        <p>You were sent to Auth0 to confirm with multi-factor authentication, but Auth0 sent
+            you back without the step-up confirmation, so the role wasn't added.</p>
+        <p>An Auth0 admin should check:</p>
+        <ol>
+            <li>At least one factor is enabled under <em>Security → Multi-factor Auth</em>.</li>
+            <li>The <strong>Require MFA for step-up</strong> Action has the latest code from
+                <code>auth0/require-mfa-for-step-up.js</code>, is <strong>deployed</strong>, and is in the
+                <em>Actions → Triggers → post-login</em> flow.</li>
+            <li>The claim name in the Action matches the app's <code>AUTH0_STEP_UP_CLAIM</code>
+                (default <code>https://authexample.demo/step_up_mfa</code>).</li>
+        </ol>
+        <p>You can see what Auth0 sent on your <a th:href="@{/profile}">profile</a> page under
+            <em>ID token claims</em>.</p>
+        <div class="button-row">
+            <a class="button" th:href="@{/admin/users/{id}/roles/verify(id=${userId})}">Try again</a>
+            <form th:action="@{/admin/users/{id}/roles/cancel(id=${userId})}" method="post">
+                <button class="button secondary" type="submit">Cancel</button>
+            </form>
+        </div>
+    </section>
+</main>
+</body>
+</html>

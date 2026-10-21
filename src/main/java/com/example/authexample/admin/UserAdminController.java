@@ -50,21 +50,26 @@ public class UserAdminController {
     static final int PER_PAGE = 25;
     private static final String ADMIN_ROLE = "admin";
     static final Duration SETUP_LINK_VALIDITY = Duration.ofDays(7);
+    /** Session flag: we've sent the admin to Auth0 for step-up and are waiting for them back. */
+    static final String STEP_UP_ATTEMPTED = UserAdminController.class.getName() + ".STEP_UP_ATTEMPTED";
 
     private final Auth0ManagementClient auth0;
     private final String connection;
     private final ObjectMapper json;
     private final Duration stepUpMaxAge;
+    private final String stepUpClaim;
     private final Clock clock = Clock.systemUTC();
     private final RequestCache requestCache = new HttpSessionRequestCache();
 
     public UserAdminController(Auth0ManagementClient auth0,
             @Value("${app.auth0.management.connection}") String connection,
             @Value("${app.auth0.step-up-max-age}") Duration stepUpMaxAge,
+            @Value("${app.auth0.step-up-claim}") String stepUpClaim,
             ObjectMapper json) {
         this.auth0 = auth0;
         this.connection = connection;
         this.stepUpMaxAge = stepUpMaxAge;
+        this.stepUpClaim = stepUpClaim;
         this.json = json;
     }
 
@@ -185,7 +190,7 @@ public class UserAdminController {
             redirect.addFlashAttribute("error", "You can't remove your own admin role. Ask another admin to do it.");
             return "redirect:/admin/users/{userId}";
         }
-        if (!change.toAdd().isEmpty() && !RecentMfa.verified(currentUser, stepUpMaxAge, clock)) {
+        if (!change.toAdd().isEmpty() && !steppedUp(currentUser)) {
             session.setAttribute(PendingRoleChange.SESSION_KEY, new PendingRoleChange(userId, wanted));
             return "redirect:/admin/users/{userId}/roles/verify";
         }
@@ -206,10 +211,19 @@ public class UserAdminController {
         if (pending == null) {
             return "redirect:/admin/users/{userId}";
         }
-        if (!RecentMfa.verified(currentUser, stepUpMaxAge, clock)) {
+        if (!steppedUp(currentUser)) {
+            // Already been to Auth0 and still no step-up claim: Auth0 isn't set up for it.
+            // Show what to fix instead of redirecting in a loop.
+            if (userId.equals(session.getAttribute(STEP_UP_ATTEMPTED))) {
+                session.removeAttribute(STEP_UP_ATTEMPTED);
+                model.addAttribute("userId", userId);
+                return "admin/step-up-failed";
+            }
+            session.setAttribute(STEP_UP_ATTEMPTED, userId);
             requestCache.saveRequest(request, response);
             return "redirect:/oauth2/authorization/auth0?" + StepUpAuthorizationRequestResolver.STEP_UP_PARAMETER;
         }
+        session.removeAttribute(STEP_UP_ATTEMPTED);
         model.addAttribute("user", auth0.getUser(userId));
         model.addAttribute("change", RoleChange.of(auth0.listRoles(), auth0.getUserRoles(userId), pending.wantedRoleIds()));
         return "admin/roles-confirm";
@@ -225,7 +239,7 @@ public class UserAdminController {
             redirect.addFlashAttribute("error", "Nothing to apply. Please make the change again.");
             return "redirect:/admin/users/{userId}";
         }
-        if (!RecentMfa.verified(currentUser, stepUpMaxAge, clock)) {
+        if (!steppedUp(currentUser)) {
             return "redirect:/admin/users/{userId}/roles/verify";
         }
         session.removeAttribute(PendingRoleChange.SESSION_KEY);
@@ -244,6 +258,10 @@ public class UserAdminController {
         session.removeAttribute(PendingRoleChange.SESSION_KEY);
         redirect.addFlashAttribute("message", "No changes were made.");
         return "redirect:/admin/users/{userId}";
+    }
+
+    private boolean steppedUp(OidcUser user) {
+        return RecentMfa.verified(user, stepUpClaim, stepUpMaxAge, clock);
     }
 
     private String apply(String userId, RoleChange change, RedirectAttributes redirect) {
