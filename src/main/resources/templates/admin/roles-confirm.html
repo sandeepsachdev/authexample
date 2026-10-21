@@ -7,7 +7,8 @@
     <section class="card">
         <span class="badge admin">ADMIN</span>
         <h1>Confirm role change</h1>
-        <p class="flash ok">✔ Identity verified with multi-factor authentication.</p>
+        <p class="flash ok">✔ Identity verified with multi-factor authentication
+            <span th:if="${verifiedAt}" class="small" th:text="'at ' + ${verifiedAt}">at 2026-10-21T09:37:38Z</span>.</p>
         <p>You're about to change the roles of <strong th:text="${user.displayName()}">Ada</strong>
             <span class="muted-text" th:if="${user.email}" th:text="'(' + ${user.email} + ')'">(ada@example.com)</span>:</p>
         <ul>

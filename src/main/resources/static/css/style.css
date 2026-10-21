@@ -56,3 +56,4 @@ form.stacked button { justify-self: start; }
 .button-row form { margin: 0; }
 .button.secondary { background: transparent; color: var(--text); border: 1px solid var(--border); }
 .button.secondary:hover { background: var(--bg); }
+.version { font-size: .75rem; color: var(--muted); font-family: ui-monospace, monospace; }

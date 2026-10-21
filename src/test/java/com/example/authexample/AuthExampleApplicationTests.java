@@ -112,4 +112,10 @@ class AuthExampleApplicationTests {
             // Hierarchy applies in templates too: an admin sees the Members area as open.
             .andExpect(content().string(org.hamcrest.Matchers.not(containsString("needs the <code>member</code>"))));
     }
+
+    @Test
+    void headerShowsDeployedVersion() throws Exception {
+        mvc.perform(get("/"))
+            .andExpect(content().string(containsString("title=\"Deployed version\">local<")));
+    }
 }

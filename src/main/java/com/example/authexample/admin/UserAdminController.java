@@ -13,6 +13,8 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -46,6 +48,8 @@ import com.example.authexample.config.StepUpAuthorizationRequestResolver;
 @Controller
 @RequestMapping("/admin/users")
 public class UserAdminController {
+
+    private static final Logger log = LoggerFactory.getLogger(UserAdminController.class);
 
     static final int PER_PAGE = 25;
     private static final String ADMIN_ROLE = "admin";
@@ -224,6 +228,7 @@ public class UserAdminController {
             return "redirect:/oauth2/authorization/auth0?" + StepUpAuthorizationRequestResolver.STEP_UP_PARAMETER;
         }
         session.removeAttribute(STEP_UP_ATTEMPTED);
+        model.addAttribute("verifiedAt", currentUser.getIssuedAt());
         model.addAttribute("user", auth0.getUser(userId));
         model.addAttribute("change", RoleChange.of(auth0.listRoles(), auth0.getUserRoles(userId), pending.wantedRoleIds()));
         return "admin/roles-confirm";
@@ -261,7 +266,12 @@ public class UserAdminController {
     }
 
     private boolean steppedUp(OidcUser user) {
-        return RecentMfa.verified(user, stepUpClaim, stepUpMaxAge, clock);
+        boolean verified = RecentMfa.verified(user, stepUpClaim, stepUpMaxAge, clock);
+        // Visible in Railway's deploy logs: shows exactly what Auth0 sent back.
+        log.info("Step-up check for {}: {}={}, amr={}, iat={}, auth_time={} -> {}",
+            user.getSubject(), stepUpClaim, user.getClaims().get(stepUpClaim), user.getAuthenticationMethods(),
+            user.getIssuedAt(), user.getAuthenticatedAt(), verified ? "verified" : "step-up needed");
+        return verified;
     }
 
     private String apply(String userId, RoleChange change, RedirectAttributes redirect) {

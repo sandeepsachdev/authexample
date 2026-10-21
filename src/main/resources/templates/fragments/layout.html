@@ -18,6 +18,7 @@
         <form sec:authorize="isAuthenticated()" th:action="@{/logout}" method="post">
             <button class="button" type="submit">Log out</button>
         </form>
+        <span th:if="${appVersion}" class="version" th:text="${appVersion}" title="Deployed version">local</span>
     </nav>
 </header>
 </body>
