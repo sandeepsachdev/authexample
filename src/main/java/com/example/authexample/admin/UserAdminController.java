@@ -225,7 +225,8 @@ public class UserAdminController {
             }
             session.setAttribute(STEP_UP_ATTEMPTED, userId);
             requestCache.saveRequest(request, response);
-            return "redirect:/oauth2/authorization/auth0?" + StepUpAuthorizationRequestResolver.STEP_UP_PARAMETER;
+            return "redirect:/oauth2/authorization/auth0?" + StepUpAuthorizationRequestResolver.STEP_UP_PARAMETER
+                + (sessionAlreadyDidMfa(currentUser) ? "=" + StepUpAuthorizationRequestResolver.FRESH_LOGIN : "");
         }
         session.removeAttribute(STEP_UP_ATTEMPTED);
         model.addAttribute("verifiedAt", currentUser.getIssuedAt());
@@ -263,6 +264,16 @@ public class UserAdminController {
         session.removeAttribute(PendingRoleChange.SESSION_KEY);
         redirect.addFlashAttribute("message", "No changes were made.");
         return "redirect:/admin/users/{userId}";
+    }
+
+    /**
+     * True if the admin's Auth0 session already passed MFA (e.g. MFA is required at login).
+     * Auth0 then won't ask for a code again on a step-up that reuses the session, so the
+     * step-up must be a completely new login instead.
+     */
+    private static boolean sessionAlreadyDidMfa(OidcUser user) {
+        List<String> methods = user.getAuthenticationMethods();
+        return methods != null && methods.contains("mfa");
     }
 
     private boolean steppedUp(OidcUser user) {

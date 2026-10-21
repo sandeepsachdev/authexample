@@ -334,6 +334,28 @@ class UserAdminControllerTests {
     }
 
     @Test
+    void stepUpWithFreshLoginAlsoAsksForThePassword() throws Exception {
+        String url = mvc.perform(get("/oauth2/authorization/auth0").param("mfa", "login"))
+            .andReturn().getResponse().getRedirectedUrl();
+
+        assertThat(url).contains("prompt=login")
+            .contains("acr_values=http://schemas.openid.net/pape/policies/2007/06/multi-factor");
+    }
+
+    @Test
+    void whenLoginAlreadyUsedMfaStepUpForcesACompletelyNewLogin() throws Exception {
+        var session = new org.springframework.mock.web.MockHttpSession();
+        session.setAttribute(PendingRoleChange.SESSION_KEY, new PendingRoleChange("auth0|ada", java.util.Set.of("rol_admin")));
+
+        // MFA required at login: amr=mfa, but no step-up claim yet.
+        mvc.perform(get("/admin/users/{id}/roles/verify", "auth0|ada").session(session)
+                .with(oidcLogin()
+                    .idToken(t -> t.subject("auth0|me").claim("amr", List.of("mfa")))
+                    .authorities(new SimpleGrantedAuthority("ROLE_ADMIN"))))
+            .andExpect(redirectedUrl("/oauth2/authorization/auth0?mfa=login"));
+    }
+
+    @Test
     void verifyWithFreshMfaShowsConfirmation() throws Exception {
         when(auth0.getUser("auth0|ada")).thenReturn(ADA);
         when(auth0.getUserRoles("auth0|ada")).thenReturn(List.of(MEMBER));

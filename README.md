@@ -277,18 +277,23 @@ This is called *step-up authentication*. Removing roles doesn't need it.
 What the admin sees:
 
 1. They tick a new role and click **Save roles**.
-2. If they haven't passed MFA in the last 5 minutes, the app sends them to Auth0, which
-   asks for an MFA code. No password is needed while their Auth0 session is still alive;
-   if it has expired (e.g. after a long idle period), Auth0 asks for the password too.
+2. If they haven't passed MFA in the last 5 minutes, the app sends them to Auth0:
+   - **MFA not required at login** (policy *Never*): the first step-up asks only for an MFA
+     code (unless the Auth0 session has expired, e.g. after a long idle period). After that
+     the session counts as having done MFA, so later step-ups ask for password and code, as below.
+   - **MFA required at login** (policy *Always*): Auth0 asks for the password **and** an MFA
+     code. Auth0 counts the MFA done at login as covering the step-up, so the app forces a
+     completely new login to get a fresh code.
 3. Back in the app, a **Confirm role change** page lists exactly what will be added and
    removed. **Apply changes** saves it; **Cancel** discards it.
 
 How it works:
 
 - The app sends Auth0
-  `acr_values=http://schemas.openid.net/pape/policies/2007/06/multi-factor` (MFA wanted),
-  but not `prompt=login`, so Auth0 reuses the existing session instead of asking for the
-  password. See `StepUpAuthorizationRequestResolver`.
+  `acr_values=http://schemas.openid.net/pape/policies/2007/06/multi-factor` (MFA wanted).
+  If the admin's current login already included MFA (`amr` contains `mfa`), it also sends
+  `prompt=login` for a completely new login; otherwise Auth0 reuses the session and skips
+  the password. See `StepUpAuthorizationRequestResolver`.
 - An Auth0 Action sees that `acr_values`, challenges the user with one of their MFA
   factors (`api.authentication.challengeWithAny`), and adds the claim
   `"https://authexample.demo/step_up_mfa": true` to the ID token. Auth0 only issues the
@@ -308,9 +313,9 @@ How it works:
 1. **Security → Multi-factor Auth**.
 2. Enable at least one factor, e.g. **One-time Password** (Google Authenticator, 1Password,
    Authy, etc.) or **Auth0 Guardian** push notifications.
-3. Under **Require Multi-factor Auth** choose **Never** and **Save**. This means MFA isn't
-   forced on every login; the Action below asks for it only for step-up. (If you choose
-   **Always**, every login uses MFA; step-up still works the same way.)
+3. Under **Require Multi-factor Auth** choose:
+   - **Never**: MFA only for step-up (code only the first time in a session); or
+   - **Always**: MFA on every login too, and step-up asks for password and code.
 
 An admin who has never used MFA will be asked to enrol a factor the first time (scan a QR
 code with their authenticator app).
