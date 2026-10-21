@@ -10,12 +10,12 @@ import org.springframework.security.oauth2.core.endpoint.OAuth2AuthorizationRequ
 
 /**
  * Builds the redirect to Auth0's login page. For a "step-up" login
- * ({@code /oauth2/authorization/auth0?mfa}) it also asks Auth0 to:
- * <ul>
- *   <li>{@code prompt=login}: make the user log in again even if Auth0 still has a session, and</li>
- *   <li>{@code acr_values=...multi-factor}: require MFA. The Auth0 Action in
- *       auth0/require-mfa-for-step-up.js sees this value and challenges the user.</li>
- * </ul>
+ * ({@code /oauth2/authorization/auth0?mfa}) it also sends
+ * {@code acr_values=...multi-factor} to ask for MFA. The Auth0 Action in
+ * auth0/require-mfa-for-step-up.js sees this value and challenges the user.
+ *
+ * It deliberately doesn't send {@code prompt=login}: while the user still has an Auth0
+ * session, Auth0 skips the password and only asks for the MFA code.
  */
 public class StepUpAuthorizationRequestResolver implements OAuth2AuthorizationRequestResolver {
 
@@ -45,10 +45,7 @@ public class StepUpAuthorizationRequestResolver implements OAuth2AuthorizationRe
             return authorizationRequest;
         }
         return OAuth2AuthorizationRequest.from(authorizationRequest)
-            .additionalParameters(params -> {
-                params.put("prompt", "login");
-                params.put("acr_values", MFA_ACR);
-            })
+            .additionalParameters(params -> params.put("acr_values", MFA_ACR))
             .build();
     }
 }

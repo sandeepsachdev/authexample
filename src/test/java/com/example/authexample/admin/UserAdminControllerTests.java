@@ -73,12 +73,14 @@ class UserAdminControllerTests {
             .authorities(new SimpleGrantedAuthority("ROLE_ADMIN"));
     }
 
-    /** An admin who logged in with MFA {@code ago} ago (Auth0 sets amr=["mfa"] and auth_time). */
+    /** An admin whose ID token, with amr=["mfa"], was issued {@code ago} ago. */
     private static RequestPostProcessor adminWithMfa(String subject, java.time.Duration ago) {
         return oidcLogin()
             .idToken(t -> t.subject(subject)
                 .claim("amr", List.of("mfa"))
-                .claim("auth_time", java.time.Instant.now().minus(ago)))
+                .issuedAt(java.time.Instant.now().minus(ago))
+                // Step-up reuses the Auth0 session, so auth_time can be the original login.
+                .claim("auth_time", java.time.Instant.now().minus(java.time.Duration.ofHours(8))))
             .authorities(new SimpleGrantedAuthority("ROLE_ADMIN"));
     }
 
@@ -316,7 +318,7 @@ class UserAdminControllerTests {
     }
 
     @Test
-    void stepUpLoginAsksAuth0ForAFreshLoginWithMfa() throws Exception {
+    void stepUpLoginAsksAuth0ForMfaButNotForThePassword() throws Exception {
         String stepUp = mvc.perform(get("/oauth2/authorization/auth0").param("mfa", ""))
             .andExpect(status().is3xxRedirection())
             .andReturn().getResponse().getRedirectedUrl();
@@ -324,7 +326,7 @@ class UserAdminControllerTests {
             .andReturn().getResponse().getRedirectedUrl();
 
         assertThat(stepUp).startsWith("https://example.auth0.com/authorize?")
-            .contains("prompt=login")
+            .doesNotContain("prompt=")
             .contains("acr_values=http://schemas.openid.net/pape/policies/2007/06/multi-factor");
         assertThat(normal).doesNotContain("prompt=").doesNotContain("acr_values");
     }

@@ -270,27 +270,30 @@ Notes:
 
 ## 6. Step-up MFA when adding a role
 
-Giving someone a role grants them more access, so the app asks the admin to **log in
-again with multi-factor authentication (MFA)** before it adds a role on a user's page.
+Giving someone a role grants them more access, so the app asks the admin to **confirm
+with multi-factor authentication (MFA)** before it adds a role on a user's page.
 This is called *step-up authentication*. Removing roles doesn't need it.
 
 What the admin sees:
 
 1. They tick a new role and click **Save roles**.
 2. If they haven't passed MFA in the last 5 minutes, the app sends them to Auth0, which
-   asks for their password **and** an MFA code.
+   asks for an MFA code. No password is needed while their Auth0 session is still alive;
+   if it has expired (e.g. after a long idle period), Auth0 asks for the password too.
 3. Back in the app, a **Confirm role change** page lists exactly what will be added and
    removed. **Apply changes** saves it; **Cancel** discards it.
 
 How it works:
 
-- The app sends Auth0 `prompt=login` (log in again even if already signed in) and
-  `acr_values=http://schemas.openid.net/pape/policies/2007/06/multi-factor` (MFA wanted).
-  See `StepUpAuthorizationRequestResolver`.
+- The app sends Auth0
+  `acr_values=http://schemas.openid.net/pape/policies/2007/06/multi-factor` (MFA wanted),
+  but not `prompt=login`, so Auth0 reuses the existing session instead of asking for the
+  password. See `StepUpAuthorizationRequestResolver`.
 - An Auth0 Action sees that `acr_values` and challenges the user for MFA.
-- Auth0 puts `"amr": ["mfa"]` and the login time `auth_time` in the new ID token. The app
-  only adds roles if `amr` contains `mfa` and `auth_time` is under 5 minutes old
-  (`RecentMfa`). It checks again when the change is applied.
+- Auth0 returns a new ID token with `"amr": ["mfa"]`. The app only adds roles if `amr`
+  contains `mfa` and the token was issued (`iat`) under 5 minutes ago (`RecentMfa`). It
+  checks again when the change is applied. It doesn't use `auth_time`, because without a
+  password step that can still be the time of the original login.
 - While the admin is away at Auth0, the requested change waits in their session.
 
 ### 6a. Turn on an MFA factor
@@ -300,7 +303,7 @@ How it works:
    Authy, etc.) or **Auth0 Guardian** push notifications.
 3. Under **Require Multi-factor Auth** choose **Never** and **Save**. This means MFA isn't
    forced on every login; the Action below asks for it only for step-up. (If you choose
-   **Always**, every login uses MFA; step-up still works and still forces a fresh login.)
+   **Always**, every login uses MFA; step-up still works the same way.)
 
 An admin who has never used MFA will be asked to enrol a factor the first time (scan a QR
 code with their authenticator app).
@@ -327,7 +330,12 @@ code with their authenticator app).
 ### 6c. Try it
 
 As an admin, open a user, tick a role they don't have and click **Save roles**. You
-should be asked to log in and enter an MFA code, then see the confirmation page.
+should be asked for an MFA code (no password), then see the confirmation page.
+
+Check this the first time: if you already did MFA earlier in the same Auth0 session, see
+whether Auth0 asks for a code again. Auth0's docs don't say whether it always does. If it
+lets you straight through and you want a code every time, add back `prompt=login` in
+`StepUpAuthorizationRequestResolver` (the admin then re-enters the password as well).
 
 To change the 5-minute window, set `AUTH0_STEP_UP_MAX_AGE` (e.g. `10m`, `30s`).
 
@@ -350,6 +358,7 @@ create users without roles and add roles from the user's page.
 | *PasswordStrengthError* when creating a user | Pick a stronger password, or leave it blank to send a setup link. |
 | *Insufficient scope ... create:users* / *create:user_tickets* | Add the two newer permissions from 5a to the M2M app. |
 | Adding a role loops back to the Auth0 login every time | The step-up Action isn't deployed / in the post-login flow, or no MFA factor is enabled, so Auth0 never puts `mfa` in `amr`. |
+| Auth0 asks for the password during step-up | Their Auth0 session had expired; that's expected. |
 | Auth0 asks for a password but never for an MFA code | Check 6a (a factor is enabled) and 6b (the Action is in the flow). |
 | Roles changed but the user still has old access | They need to log out and back in. |
 | Roles claim is in the token but still *none* | The claim name must equal `AUTH0_ROLES_CLAIM` (default `https://authexample.demo/roles`). |

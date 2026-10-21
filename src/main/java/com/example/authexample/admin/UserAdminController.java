@@ -194,7 +194,7 @@ public class UserAdminController {
 
     /**
      * Step-up checkpoint. Without a recent MFA login, remember this URL and send the admin
-     * to Auth0 to log in again with MFA; Spring Security brings them back here afterwards.
+     * to Auth0 to confirm with MFA; Spring Security brings them back here afterwards.
      * With one, show the pending change for a final confirmation.
      */
     @GetMapping("/{userId}/roles/verify")
