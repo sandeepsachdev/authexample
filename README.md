@@ -289,11 +289,18 @@ How it works:
   `acr_values=http://schemas.openid.net/pape/policies/2007/06/multi-factor` (MFA wanted),
   but not `prompt=login`, so Auth0 reuses the existing session instead of asking for the
   password. See `StepUpAuthorizationRequestResolver`.
-- An Auth0 Action sees that `acr_values` and challenges the user for MFA.
-- Auth0 returns a new ID token with `"amr": ["mfa"]`. The app only adds roles if `amr`
-  contains `mfa` and the token was issued (`iat`) under 5 minutes ago (`RecentMfa`). It
-  checks again when the change is applied. It doesn't use `auth_time`, because without a
-  password step that can still be the time of the original login.
+- An Auth0 Action sees that `acr_values`, challenges the user with one of their MFA
+  factors (`api.authentication.challengeWithAny`), and adds the claim
+  `"https://authexample.demo/step_up_mfa": true` to the ID token. Auth0 only issues the
+  token after the challenge is passed, so the claim proves MFA happened in that login.
+- The app only adds roles if that claim is present and the token was issued (`iat`) under
+  5 minutes ago (`RecentMfa`). It checks again when the change is applied.
+  - It doesn't trust `"amr": ["mfa"]` alone: Auth0 also sets that when MFA was done earlier
+    in the session, without a new challenge.
+  - It doesn't use `auth_time`: without a password step, that can still be the time of
+    the original login.
+- If the admin comes back from Auth0 without the claim, the app shows a page explaining
+  what to check in Auth0, instead of sending them round in a loop.
 - While the admin is away at Auth0, the requested change waits in their session.
 
 ### 6a. Turn on an MFA factor
@@ -318,9 +325,16 @@ code with their authenticator app).
    exports.onExecutePostLogin = async (event, api) => {
      const MFA_ACR = 'http://schemas.openid.net/pape/policies/2007/06/multi-factor';
      const requested = (event.transaction && event.transaction.acr_values) || [];
-     if (requested.includes(MFA_ACR)) {
-       api.multifactor.enable('any', { allowRememberBrowser: false });
+     if (!requested.includes(MFA_ACR)) {
+       return;
      }
+     const enrolled = (event.user.enrolledFactors || []).map((factor) => ({ type: factor.type }));
+     if (enrolled.length > 0) {
+       api.authentication.challengeWithAny(enrolled);   // always ask, even if MFA was done earlier
+     } else {
+       api.multifactor.enable('any', { allowRememberBrowser: false });   // first-time enrolment
+     }
+     api.idToken.setCustomClaim('https://authexample.demo/step_up_mfa', true);
    };
    ```
 4. **Deploy**.
@@ -330,12 +344,11 @@ code with their authenticator app).
 ### 6c. Try it
 
 As an admin, open a user, tick a role they don't have and click **Save roles**. You
-should be asked for an MFA code (no password), then see the confirmation page.
+should be asked for an MFA code (no password), then see the confirmation page. Your
+**Profile** page lists the ID token claims; after a step-up it should include
+`https://authexample.demo/step_up_mfa: true`.
 
-Check this the first time: if you already did MFA earlier in the same Auth0 session, see
-whether Auth0 asks for a code again. Auth0's docs don't say whether it always does. If it
-lets you straight through and you want a code every time, add back `prompt=login` in
-`StepUpAuthorizationRequestResolver` (the admin then re-enters the password as well).
+If you change the claim name in the Action, set `AUTH0_STEP_UP_CLAIM` to match.
 
 To change the 5-minute window, set `AUTH0_STEP_UP_MAX_AGE` (e.g. `10m`, `30s`).
 
@@ -357,8 +370,7 @@ create users without roles and add roles from the user's page.
 | *The user already exists.* when creating a user | That email already has an account; find it in the user list. |
 | *PasswordStrengthError* when creating a user | Pick a stronger password, or leave it blank to send a setup link. |
 | *Insufficient scope ... create:users* / *create:user_tickets* | Add the two newer permissions from 5a to the M2M app. |
-| Adding a role loops back to the Auth0 login every time | The step-up Action isn't deployed / in the post-login flow, or no MFA factor is enabled, so Auth0 never puts `mfa` in `amr`. |
+| Adding a role shows *MFA check didn't happen* | The step-up Action isn't the latest version, isn't deployed, or isn't in the post-login flow; or no MFA factor is enabled (6a, 6b). |
 | Auth0 asks for the password during step-up | Their Auth0 session had expired; that's expected. |
-| Auth0 asks for a password but never for an MFA code | Check 6a (a factor is enabled) and 6b (the Action is in the flow). |
 | Roles changed but the user still has old access | They need to log out and back in. |
 | Roles claim is in the token but still *none* | The claim name must equal `AUTH0_ROLES_CLAIM` (default `https://authexample.demo/roles`). |
