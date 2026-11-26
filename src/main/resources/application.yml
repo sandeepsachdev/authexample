@@ -1,0 +1,48 @@
+server:
+  # Railway injects PORT; fall back to 8080 locally.
+  port: ${PORT:8080}
+  # Railway terminates TLS at its proxy. Trust X-Forwarded-* headers so that
+  # generated redirect URIs use https://<your-app>.up.railway.app.
+  forward-headers-strategy: framework
+
+spring:
+  application:
+    name: authexample
+  security:
+    oauth2:
+      client:
+        registration:
+          auth0:
+            client-id: ${AUTH0_CLIENT_ID}
+            client-secret: ${AUTH0_CLIENT_SECRET}
+            scope: openid, profile, email
+        provider:
+          auth0:
+            # e.g. AUTH0_DOMAIN=dev-abc123.us.auth0.com
+            # The trailing slash matters: it must match the "iss" claim in Auth0 tokens.
+            issuer-uri: https://${AUTH0_DOMAIN}/
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+
+app:
+  auth0:
+    # Custom ID-token claim that the Auth0 Post-Login Action fills with the user's roles.
+    # Must match the namespace in auth0/add-roles-to-tokens.js.
+    roles-claim: ${AUTH0_ROLES_CLAIM:https://authexample.demo/roles}
+    domain: ${AUTH0_DOMAIN}
+    # Machine-to-Machine app authorized for the Auth0 Management API. Used by the
+    # admin "Users" page. Optional: the page explains how to set it up if missing.
+    management:
+      client-id: ${AUTH0_MGMT_CLIENT_ID:}
+      client-secret: ${AUTH0_MGMT_CLIENT_SECRET:}
+      # Auth0 database connection that admin-created users are added to.
+      connection: ${AUTH0_DB_CONNECTION:Username-Password-Authentication}
+    # Adding a role requires the admin to have passed MFA within this long (step-up auth).
+    step-up-max-age: ${AUTH0_STEP_UP_MAX_AGE:5m}
+    # Custom ID-token claim the step-up Action sets after challenging for MFA.
+    # Must match the claim in auth0/require-mfa-for-step-up.js.
+    step-up-claim: ${AUTH0_STEP_UP_CLAIM:https://authexample.demo/step_up_mfa}

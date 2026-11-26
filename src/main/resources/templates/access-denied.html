@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments/layout :: head('Access denied')}"></head>
+<body>
+<header th:replace="~{fragments/layout :: nav}"></header>
+<main>
+    <section class="card">
+        <h1>🚫 Access denied</h1>
+        <p>You're signed in, but your account doesn't have the role this page needs.</p>
+        <p>Check which roles you have on your <a th:href="@{/profile}">profile</a>. An Auth0 admin can
+            assign roles under <em>User Management → Users → (user) → Roles</em>; log out and back in
+            afterwards so the new roles are picked up.</p>
+    </section>
+</main>
+</body>
+</html>
